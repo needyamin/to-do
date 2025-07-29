@@ -106,7 +106,7 @@ def build_project():
         python312_path,
         "-m", 
         "nuitka",
-        "--msvc=latest",  # Try MSVC first
+        "--mingw64",  # Use MinGW64 instead of MSVC
         "--follow-imports",
         "--windows-disable-console",
         "--assume-yes-for-downloads",  # Auto-download required components
