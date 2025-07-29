@@ -19,6 +19,17 @@ overdue_sound_played = set()
 blinking_tasks = set()  # Track which tasks are currently blinking
 blink_state = True  # Toggle for blinking effect
 
+# Global icon path
+ICON_PATH = os.path.join(os.getcwd(), "icon.ico")
+
+def set_window_icon(window):
+    """Set icon for a window if icon file exists"""
+    try:
+        if os.path.exists(ICON_PATH):
+            window.iconbitmap(ICON_PATH)
+    except Exception as e:
+        print(f"Error setting window icon: {e}")
+
 def create_scrolled_listbox(parent, **kwargs):
     frame = tk.Frame(parent, bg="white")
     frame.pack(fill="both", expand=True, padx=kwargs.pop('padx', 0), pady=kwargs.pop('pady', 0))
@@ -262,6 +273,9 @@ def add_timer_window():
     timer_window.geometry("500x700")
     timer_window.config(bg="white")
     timer_window.resizable(False, False)
+    
+    # Set icon for timer window
+    set_window_icon(timer_window)
     
     # Center the window
     timer_window.transient(root)
@@ -740,6 +754,9 @@ def add_link_window():
     link_window.title("Add New Link")
     link_window.geometry("500x250")
     
+    # Set icon for link window
+    set_window_icon(link_window)
+    
     name_entry = tk.Entry(link_window, font=("Segoe UI", 13))
     name_entry.pack(pady=5)
     add_placeholder(name_entry, "Enter link name...")
@@ -791,6 +808,9 @@ def add_note_window():
     note_window = tk.Toplevel(root)
     note_window.title("Add New Note")
     note_window.geometry("600x500")  # Bigger window
+    
+    # Set icon for note window
+    set_window_icon(note_window)
     
     container = tk.Frame(note_window, bg="white", padx=20, pady=15)
     container.pack(fill="both", expand=True)
@@ -859,6 +879,9 @@ def view_note(event):
                 view_window.title(note[1])
                 view_window.geometry("600x400")  # Bigger window
                 
+                # Set icon for view window
+                set_window_icon(view_window)
+                
                 # Add a container frame
                 container = tk.Frame(view_window, bg="white", padx=20, pady=10)
                 container.pack(fill="both", expand=True)
@@ -905,6 +928,17 @@ root.title("🧠 Advanced Daily Dashboard")
 root.geometry("1024x768")  # Bigger initial size
 root.minsize(1300, 980)    # Minimum window size
 root.config(bg="#eaf4fc")
+
+# Set application icon
+try:
+    icon_path = os.path.join(os.getcwd(), "icon.ico")
+    if os.path.exists(icon_path):
+        root.iconbitmap(icon_path)
+        print(f"Application icon loaded: {icon_path}")
+    else:
+        print(f"Icon file not found: {icon_path}")
+except Exception as e:
+    print(f"Error loading icon: {e}")
 
 # Create outer container
 outer_frame = tk.Frame(root, bg="#eaf4fc")
