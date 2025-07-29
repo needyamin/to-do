@@ -2,6 +2,8 @@
 
 A comprehensive daily dashboard application built with Python and Tkinter for managing tasks, notes, and useful links with timer functionality and deadline tracking.
 
+<img width="1297" height="1010" alt="Image" src="https://github.com/user-attachments/assets/d3a1e4e2-50d3-4c81-ab4a-4b7486c149af" />
+
 ## 🚀 Features
 
 ### 📋 Task Management
