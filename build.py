@@ -101,26 +101,20 @@ def build_project():
         include_commands.append(f"--include-data-files={db_file}=database/sweethart.db")
         print(f"Including database file: {db_file}")
     
-    # Nuitka build command
+    # Nuitka build command - single file executable
     build_command = [
         python312_path,
         "-m", 
         "nuitka",
         "--mingw64",  # Use MinGW64 instead of MSVC
         "--follow-imports",
-        "--windows-disable-console",
-        "--assume-yes-for-downloads",  # Auto-download required components
-        "--show-modules",  # Show module compilation progress
-        "--show-scons",    # Show detailed compilation output
-        "--windows-icon-from-ico=icon.ico",  # Optional: Add this line if you have an icon file
-        "--standalone",
+        "--windows-disable-console",  # Disable console for GUI app
+        "--onefile",  # Create single executable file
         "--enable-plugin=tk-inter",
         "--output-dir=build",
         "--show-progress",
-        "--show-memory",
         "--assume-yes-for-downloads",
-        "--nofollow-import-to=tkinter",  # Optimize Tkinter imports
-        "--python-flag=no_site",  # Optimize startup
+        "--windows-icon-from-ico=icon.ico",  # Add icon to single file
     ] + include_commands + [task_py]
     
     print("Building executable...")
