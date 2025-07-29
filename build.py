@@ -90,6 +90,12 @@ def build_project():
     if os.path.exists(assets_dir):
         include_commands.append(f"--include-data-dir={assets_dir}=assets")
         print(f"Including assets directory: {assets_dir}")
+        
+        # Also include specific overdue.mp3 file as backup
+        overdue_mp3 = os.path.join(assets_dir, "overdue.mp3")
+        if os.path.exists(overdue_mp3):
+            include_commands.append(f"--include-data-files={overdue_mp3}=assets/overdue.mp3")
+            print(f"Including overdue.mp3 file: {overdue_mp3}")
     
     # Include database directory
     if os.path.exists(database_dir):
@@ -123,28 +129,29 @@ def build_project():
     
     if result.returncode == 0:
         print("\nBuild completed successfully!")
-        print("\nExecutable can be found in the 'build' directory")
+        print("\nSingle file executable can be found in the 'build' directory")
         
-        # Copy directories to build folder as backup
+        # Copy directories to build folder as backup (for standalone version)
         build_dir = os.path.join(current_dir, "build")
         if os.path.exists(assets_dir):
             build_assets_dir = os.path.join(build_dir, "assets")
             if os.path.exists(build_assets_dir):
                 shutil.rmtree(build_assets_dir)
             shutil.copytree(assets_dir, build_assets_dir)
-            print("Assets directory copied to build directory")
+            print("Assets directory copied to build directory as backup")
         
         if os.path.exists(database_dir):
             build_database_dir = os.path.join(build_dir, "database")
             if os.path.exists(build_database_dir):
                 shutil.rmtree(build_database_dir)
             shutil.copytree(database_dir, build_database_dir)
-            print("Database directory copied to build directory")
+            print("Database directory copied to build directory as backup")
         
         print("\nBuild summary:")
-        print("- Assets folder included and copied to build directory")
-        print("- Database folder included and copied to build directory")
-        print("- Executable created with all required resources")
+        print("- Single file executable created with all resources embedded")
+        print("- Assets folder (including overdue.mp3) included in executable")
+        print("- Database folder included in executable")
+        print("- No external dependencies required")
     else:
         print("\nBuild failed!")
 

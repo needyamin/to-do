@@ -9,7 +9,10 @@ from playsound import playsound
 import threading
 
 
-DB_NAME = os.path.join(os.getcwd(), "database", "sweethart.db")
+db_folder = r"C:\YAMiN\database"
+os.makedirs(db_folder, exist_ok=True)  # Makes sure the folder exists
+
+DB_NAME = os.path.join(db_folder, "sweethart.db")
 os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
 
 # Global set to track overdue tasks that have already played sound
@@ -572,7 +575,16 @@ def update_timers():
                     # Play sound for overdue tasks (only once per task)
                     if task_id not in overdue_sound_played:
                         try:
-                            sound_file = os.path.join("assets", "overdue.mp3")
+                            # Try to find assets in the executable's directory or embedded location
+                            if getattr(sys, 'frozen', False):
+                                # Running as compiled executable
+                                base_path = sys._MEIPASS
+                            else:
+                                # Running as script
+                                base_path = os.getcwd()
+                            
+                            assets_folder = os.path.join(base_path, "assets")
+                            sound_file = os.path.join(assets_folder, "overdue.mp3")
                             if os.path.exists(sound_file):
                                 print(f"Playing overdue sound: {sound_file}")  # Debug print
                                 
@@ -1220,7 +1232,16 @@ credit_link.bind("<Leave>", lambda e: credit_link.config(fg="#007bff"))
 def play_sound_background():
     """Test function to debug sound playback"""
     try:
-        sound_file = os.path.join("assets", "overdue.mp3")
+        # Try to find assets in the executable's directory or embedded location
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            base_path = sys._MEIPASS
+        else:
+            # Running as script
+            base_path = os.getcwd()
+        
+        assets_folder = os.path.join(base_path, "assets")
+        sound_file = os.path.join(assets_folder, "overdue.mp3")
         if os.path.exists(sound_file):
             print(f"Testing sound playback: {sound_file}")  # Debug print
             full_path = os.path.abspath(sound_file)
