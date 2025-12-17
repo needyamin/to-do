@@ -101,10 +101,16 @@ python build.py
 **Output**: `build/DailyDashboard.AppImage`
 
 ### Build Requirements
-- Python 3.12+
+- Python 3.12+ (recommended: Python 3.12 for Windows builds)
 - Internet connection (for downloading compilers and dependencies)
 - 2-5 GB free disk space
 - For Linux: `patchelf` (automatically installed if needed)
+
+**Note for Python 3.13+ on Windows:**
+- Python 3.13+ requires MSVC compiler (MinGW64 is not supported)
+- The build script automatically uses `--msvc=latest` for Python 3.13+
+- MSVC will be downloaded automatically by Nuitka if not available
+- For best compatibility, Python 3.12 is recommended for Windows builds
 
 All builds are created in the `build/` directory in the project root.
 
@@ -227,9 +233,13 @@ to-do-main/
 
 ### Common Issues
 
-**Build Fails with MSVC Error (Windows)**
-- Solution: Build script uses `--mingw64` flag automatically
-- Nuitka will automatically download MinGW64
+**Build Fails with Compiler Error (Windows)**
+- **Python 3.13+**: Build script automatically uses `--msvc=latest`
+  - MSVC will be downloaded automatically by Nuitka
+  - First build may take longer while MSVC downloads
+- **Python 3.12 and earlier**: Build script uses `--mingw64` flag automatically
+  - Nuitka will automatically download MinGW64
+- If build still fails, try using Python 3.12 for best compatibility
 
 **Build Fails on Linux**
 - Ensure `patchelf` is installed: `sudo apt-get install patchelf` (Debian/Ubuntu)
