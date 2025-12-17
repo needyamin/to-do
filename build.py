@@ -32,11 +32,18 @@ def install_requirements():
             print(f"Installing {req}...")
             run([sys.executable, "-m", "pip", "install", "--upgrade", req], check=False)
 
+def get_python_version():
+    """Get Python version as tuple (major, minor)"""
+    return sys.version_info[:2]
+
 def build_windows_exe():
     """Build Windows .exe using Nuitka"""
     print("Building Windows executable (.exe)...")
     
     python_path = sys.executable
+    python_version = get_python_version()
+    print(f"Python version: {python_version[0]}.{python_version[1]}")
+    
     current_dir = os.path.dirname(os.path.abspath(__file__))
     task_py = os.path.join(current_dir, "task.py")
     build_dir = os.path.join(current_dir, "build")
@@ -64,11 +71,22 @@ def build_windows_exe():
         icon_command = [f"--windows-icon-from-ico={icon_path}"]
         print(f"Including icon: {icon_path}")
     
+    # Determine compiler based on Python version
+    # Python 3.13+ requires MSVC, Python 3.12 and earlier can use MinGW64
+    compiler_flag = []
+    if python_version >= (3, 13):
+        print("⚠️  Python 3.13+ detected: Using MSVC compiler (MinGW64 not supported)")
+        print("   Nuitka will download MSVC automatically if needed")
+        compiler_flag = ["--msvc=latest"]
+    else:
+        print("Using MinGW64 compiler")
+        compiler_flag = ["--mingw64"]
+    
     # Nuitka build command for Windows
     build_command = [
         python_path,
         "-m", "nuitka",
-        "--mingw64",
+    ] + compiler_flag + [
         "--follow-imports",
         "--windows-disable-console",
         "--onefile",
@@ -223,6 +241,16 @@ def build_project():
             print(f"Warning: Could not clean build directory: {e}")
     
     os.makedirs(build_dir, exist_ok=True)
+    
+    # Check Python version and provide warnings
+    python_version = get_python_version()
+    print(f"\nPython version: {python_version[0]}.{python_version[1]}")
+    
+    if system == "Windows" and python_version >= (3, 13):
+        print("\n⚠️  NOTE: Python 3.13+ detected on Windows")
+        print("   Nuitka will use MSVC compiler instead of MinGW64")
+        print("   MSVC will be downloaded automatically if not available")
+        print("   This may take longer on first build")
     
     # Build based on OS
     print("\n" + "=" * 60)
