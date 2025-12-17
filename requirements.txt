@@ -1,10 +1,25 @@
 # Runtime Dependencies
+# These are required for the application to run
 pytz>=2024.1
 playsound==1.2.2
 boto3>=1.28.0
 
-# Build Dependencies (optional; only needed to create an .exe via Nuitka)
+# Build Dependencies (optional; only needed to create executables via Nuitka)
+# Install these only if you want to build .exe (Windows) or AppImage (Linux)
 nuitka>=2.0
 zstandard>=0.21.0
 ordered-set>=4.1.0
-clang>=16.0.0
+
+# Platform-specific build dependencies
+# Windows: MinGW64 is downloaded automatically by Nuitka
+# Linux: clang and patchelf may be needed
+# clang>=16.0.0  # Uncomment if needed on Linux
+# patchelf  # Uncomment if needed on Linux (install via system package manager: apt-get/yum)
+
+# Notes:
+# - boto3 is optional but recommended if you plan to use S3 sync
+# - For Linux builds, you may need to install patchelf via system package manager:
+#   Debian/Ubuntu: sudo apt-get install patchelf
+#   RHEL/CentOS: sudo yum install patchelf
+# - For Windows builds, MinGW64 is automatically downloaded by Nuitka
+# - All other dependencies (tkinter, sqlite3, ftplib, etc.) are part of Python standard library
