@@ -234,12 +234,34 @@ to-do-main/
 ### Common Issues
 
 **Build Fails with Compiler Error (Windows)**
-- **Python 3.13+**: Build script automatically uses `--msvc=latest`
-  - MSVC will be downloaded automatically by Nuitka
+
+**Error: "No tool module 'ilink' found" or MSVC errors**
+- This error occurs when MSVC (Visual Studio Build Tools) is not properly installed
+- **Solution 1 (Recommended)**: Install Visual Studio Build Tools 2022
+  - Download: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
+  - Install "Build Tools for Visual Studio 2022"
+  - During installation, select **"Desktop development with C++"** workload
+  - Restart your terminal/command prompt after installation
+  - Run `python build.py` again
+
+- **Solution 2 (Easiest)**: Use Python 3.12 instead
+  - Python 3.12 works with MinGW64 (automatically downloaded by Nuitka)
+  - No additional tools required
+  - Download Python 3.12: https://www.python.org/downloads/
+  - Recommended for easier builds
+
+- **Solution 3**: Update Nuitka to latest version
+  ```bash
+  pip install --upgrade nuitka
+  ```
+
+**General Compiler Notes:**
+- **Python 3.13+**: Requires MSVC compiler (`--msvc=latest`)
+  - MSVC will be downloaded automatically by Nuitka if available
   - First build may take longer while MSVC downloads
-- **Python 3.12 and earlier**: Build script uses `--mingw64` flag automatically
+- **Python 3.12 and earlier**: Uses MinGW64 compiler (`--mingw64`)
   - Nuitka will automatically download MinGW64
-- If build still fails, try using Python 3.12 for best compatibility
+  - No additional installation required
 
 **Build Fails on Linux**
 - Ensure `patchelf` is installed: `sudo apt-get install patchelf` (Debian/Ubuntu)

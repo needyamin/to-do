@@ -36,6 +36,47 @@ def get_python_version():
     """Get Python version as tuple (major, minor)"""
     return sys.version_info[:2]
 
+def check_msvc_available():
+    """Check if MSVC is available on the system"""
+    try:
+        # Try to find vswhere (Visual Studio Installer location tool)
+        import subprocess
+        vswhere_paths = [
+            r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe",
+            r"C:\Program Files\Microsoft Visual Studio\Installer\vswhere.exe",
+        ]
+        
+        for vswhere in vswhere_paths:
+            if os.path.exists(vswhere):
+                result = subprocess.run(
+                    [vswhere, "-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return True
+        
+        # Check for cl.exe in common paths
+        common_paths = [
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC",
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC",
+        ]
+        
+        for base_path in common_paths:
+            if os.path.exists(base_path):
+                # Check for any version subdirectory
+                for item in os.listdir(base_path):
+                    cl_path = os.path.join(base_path, item, "bin", "Hostx64", "x64", "cl.exe")
+                    if os.path.exists(cl_path):
+                        return True
+        
+        return False
+    except Exception:
+        return False
+
 def build_windows_exe():
     """Build Windows .exe using Nuitka"""
     print("Building Windows executable (.exe)...")
@@ -75,8 +116,23 @@ def build_windows_exe():
     # Python 3.13+ requires MSVC, Python 3.12 and earlier can use MinGW64
     compiler_flag = []
     if python_version >= (3, 13):
-        print("⚠️  Python 3.13+ detected: Using MSVC compiler (MinGW64 not supported)")
-        print("   Nuitka will download MSVC automatically if needed")
+        print("⚠️  Python 3.13+ detected: MSVC compiler required (MinGW64 not supported)")
+        
+        # Check if MSVC is available
+        msvc_available = check_msvc_available()
+        if not msvc_available:
+            print("\n⚠️  WARNING: MSVC not detected on your system")
+            print("   Nuitka will attempt to download MSVC automatically")
+            print("   If this fails, please install Visual Studio Build Tools:")
+            print("   https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022")
+            print("   Or use Python 3.12 for better compatibility with MinGW64\n")
+        else:
+            print("   ✓ MSVC detected on your system")
+        
+        # Try different MSVC options based on availability
+        # First try with latest, if that fails user can try --msvc=14.3 or install VS Build Tools
+        print("   Using --msvc=latest flag")
+        print("   If build fails with 'ilink' error, try installing Visual Studio Build Tools")
         compiler_flag = ["--msvc=latest"]
     else:
         print("Using MinGW64 compiler")
@@ -105,6 +161,33 @@ def build_windows_exe():
         return True
     else:
         print("\n❌ Windows .exe build failed!")
+        
+        # Provide helpful error messages based on Python version
+        if python_version >= (3, 13):
+            print("\n" + "=" * 60)
+            print("TROUBLESHOOTING FOR PYTHON 3.13+")
+            print("=" * 60)
+            print("The build failed because MSVC compiler tools are not properly available.")
+            print("\nSOLUTIONS:")
+            print("1. Install Visual Studio Build Tools 2022:")
+            print("   https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022")
+            print("   - Download 'Build Tools for Visual Studio 2022'")
+            print("   - During installation, select 'Desktop development with C++' workload")
+            print("   - Restart your terminal/command prompt after installation")
+            print("\n2. OR use Python 3.12 (recommended for easier builds):")
+            print("   - Python 3.12 works with MinGW64 (automatically downloaded)")
+            print("   - Download from: https://www.python.org/downloads/")
+            print("   - No additional tools required")
+            print("\n3. OR try updating Nuitka to latest version:")
+            print("   pip install --upgrade nuitka")
+            print("\n4. OR try building without onefile (standalone mode):")
+            print("   Edit build.py and change '--onefile' to '--standalone'")
+            print("   This creates a folder with the executable and dependencies")
+            print("=" * 60)
+            print("\n💡 RECOMMENDED: Use Python 3.12 for the easiest build experience")
+            print("   Python 3.12 works perfectly with MinGW64 (no extra tools needed)")
+            print("=" * 60)
+        
         return False
 
 def build_linux_appimage():
