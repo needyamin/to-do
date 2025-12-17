@@ -1,22 +1,10 @@
 # Runtime Dependencies
-pytz>=2023.3
+pytz>=2024.1
 playsound==1.2.2
+boto3>=1.28.0
 
-# Build Dependencies (for creating executable)
+# Build Dependencies (optional; only needed to create an .exe via Nuitka)
 nuitka>=2.0
 zstandard>=0.21.0
 ordered-set>=4.1.0
 clang>=16.0.0
-
-# Standard Library Dependencies (included with Python)
-# tkinter - GUI framework (built-in)
-# sqlite3 - Database (built-in)
-# datetime - Date/time handling (built-in)
-# os - Operating system interface (built-in)
-# threading - Threading support (built-in)
-# subprocess - Subprocess management (built-in)
-# webbrowser - Web browser control (built-in)
-# time - Time access and conversions (built-in)
-# winsound - Windows sound interface (built-in, Windows only)
-# shutil - High-level file operations (built-in)
-# sys - System-specific parameters (built-in) 
