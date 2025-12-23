@@ -2,6 +2,11 @@
 
 A comprehensive cross-platform Python application for daily task management with integrated tools for MySQL backups, FTP/SFTP file management, media downloading, and advanced shell access.
 
+<img width="1629" height="941" alt="Image" src="https://github.com/user-attachments/assets/9d335d79-622c-42c7-b972-e74a825e9943" />
+<img width="992" height="858" alt="Image" src="https://github.com/user-attachments/assets/125d0182-2c7f-4902-baed-1603ad36ef9a" />
+<img width="746" height="728" alt="Image" src="https://github.com/user-attachments/assets/ae1e4df3-ed10-4c13-a9f3-feb215589f8f" />
+<img width="577" height="783" alt="Image" src="https://github.com/user-attachments/assets/812520ee-c0a3-4545-a844-6c8b3420d545" />
+
 ## 🚀 Features
 
 ### 📋 Core Dashboard Features
