@@ -12,12 +12,22 @@ import urllib.request
 import urllib.parse
 import hashlib
 import uuid
-import winsound  # For Windows sound notification
 import subprocess  # For MP3 playback
 from playsound import playsound
 import threading
 import ftplib
 from urllib.parse import urlparse
+import math  # For analog clock calculations
+
+# Set AppUserModelID early to help Windows identify this as a separate app
+# This must be done BEFORE creating any windows
+if sys.platform == "win32":
+    try:
+        import ctypes
+        shell32 = ctypes.windll.shell32
+        shell32.SetCurrentProcessExplicitAppUserModelID("DailyDashboard.TaskApp.1.0")
+    except:
+        pass
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError
@@ -25,12 +35,17 @@ try:
 except ImportError:
     S3_AVAILABLE = False
 
+# Windows-only sound module (not available on Linux/Mac)
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
 
 APP_NAME = "DailyDashboard"
-SETTINGS_FILE = "settings.json"
 
-def settings_path() -> str:
-    return os.path.join(get_app_data_dir(), SETTINGS_FILE)
+# Import shared settings database
+from settings_db import get_setting, set_setting
 
 DEFAULT_SETTINGS = {
     "theme": "light",  # light | dark
@@ -40,7 +55,10 @@ DEFAULT_SETTINGS = {
     "sync_user": "default",
     "sync_token": "",
     "sync_interval_sec": 60,
-    "sync_conflict": "prefer_newer",  # prefer_local | prefer_server | prefer_newer
+    # Conflict policy is now hard‑wired to "prefer newest copy" in code so that
+    # the most recently modified DB (local or server) always wins.
+    # This key is kept only for backwards‑compatibility with older configs.
+    "sync_conflict": "prefer_newer",
     # FTP settings
     "sync_ftp_host": "",
     "sync_ftp_port": 21,
@@ -49,32 +67,80 @@ DEFAULT_SETTINGS = {
     "sync_ftp_path": "/",
     # S3 settings
     "sync_s3_bucket": "",
-    "sync_s3_key": "sweethart.db",
+    "sync_s3_key": "taskmask.db",
     "sync_s3_region": "us-east-1",
     "sync_s3_access_key": "",
     "sync_s3_secret_key": "",
+    # Archive settings
+    "archive_threshold_hours": 8,  # Auto-archive tasks checked for more than this many hours
+    # Display settings - Individual clock visibility
+    "show_clock_us": True,
+    "show_clock_uk": True,
+    "show_clock_japan": True,
+    "show_clock_bangladesh": True,
+    "show_clock_india": True,
+    "show_clock_singapore": True,
+    # Date and time display
+    "show_datetime": True,  # Show/hide the main date and time display
 }
 
 def load_settings() -> dict:
+    """Load settings from shared settings.db database."""
     try:
-        os.makedirs(get_app_data_dir(), exist_ok=True)
-        p = settings_path()
-        if not os.path.exists(p):
-            return dict(DEFAULT_SETTINGS)
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        merged = dict(DEFAULT_SETTINGS)
-        merged.update({k: v for k, v in data.items() if k in DEFAULT_SETTINGS})
-        return merged
+        settings = {}
+        # Load all settings from database with defaults
+        for key, default_value in DEFAULT_SETTINGS.items():
+            db_value = get_setting(f"task_{key}")
+            if db_value is not None:
+                # Try to parse as JSON first (for complex types), fallback to string
+                try:
+                    parsed = json.loads(db_value)
+                    settings[key] = parsed
+                except (json.JSONDecodeError, TypeError):
+                    # Not JSON, convert string back to appropriate type
+                    if isinstance(default_value, bool):
+                        settings[key] = db_value.lower() in ("true", "1", "yes")
+                    elif isinstance(default_value, int):
+                        try:
+                            settings[key] = int(db_value)
+                        except ValueError:
+                            settings[key] = default_value
+                    else:
+                        settings[key] = db_value
+            else:
+                settings[key] = default_value
+        
+        # Migration: Check if old JSON file exists and migrate it
+        old_json_path = os.path.join(get_app_data_dir(), "settings.json")
+        if os.path.exists(old_json_path):
+            try:
+                with open(old_json_path, "r", encoding="utf-8") as f:
+                    old_data = json.load(f)
+                # Migrate old settings to database
+                for key, value in old_data.items():
+                    if key in DEFAULT_SETTINGS:
+                        # Store as JSON string for proper type preservation
+                        set_setting(f"task_{key}", json.dumps(value))
+                # Optionally rename old file to mark it as migrated
+                try:
+                    os.rename(old_json_path, old_json_path + ".migrated")
+                except:
+                    pass
+            except Exception as e:
+                print(f"Settings migration warning: {e}")
+        
+        return settings
     except Exception as e:
         print(f"Settings load warning: {e}")
         return dict(DEFAULT_SETTINGS)
 
 def save_settings(settings: dict) -> None:
+    """Save settings to shared settings.db database."""
     try:
-        os.makedirs(get_app_data_dir(), exist_ok=True)
-        with open(settings_path(), "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
+        for key, value in settings.items():
+            if key in DEFAULT_SETTINGS:
+                # Store as JSON string for proper type preservation
+                set_setting(f"task_{key}", json.dumps(value))
     except Exception as e:
         print(f"Settings save warning: {e}")
 
@@ -123,12 +189,13 @@ def sync_ftp() -> str:
     user = (settings.get("sync_ftp_user") or "").strip()
     password = (settings.get("sync_ftp_pass") or "").strip()
     remote_path = (settings.get("sync_ftp_path") or "/").strip().rstrip("/")
-    conflict = settings.get("sync_conflict", "prefer_newer")
+    # Always prefer the most recently modified DB (local vs server),
+    # regardless of any older "sync_conflict" setting.
     
     if not host or not user:
         return "FTP sync: missing host or username"
     
-    remote_file = f"{remote_path}/sweethart.db"
+    remote_file = f"{remote_path}/taskmask.db"
     local_exists = os.path.exists(DB_NAME)
     local_mtime = os.path.getmtime(DB_NAME) if local_exists else 0
     local_sha = sha256_file(DB_NAME) if local_exists else ""
@@ -181,14 +248,10 @@ def sync_ftp() -> str:
             ftp.quit()
             return "FTP sync: up-to-date"
         
-        # Decide direction
-        direction = "download"
-        if conflict == "prefer_local":
-            direction = "upload"
-        elif conflict == "prefer_server":
-            direction = "download"
-        else:  # prefer_newer
-            direction = "upload" if local_mtime >= server_mtime else "download"
+        # Decide direction based purely on which copy is newer.
+        # - If local DB is newer (or same time), upload to server.
+        # - If server DB is newer, download from server.
+        direction = "upload" if local_mtime >= server_mtime else "download"
         
         if direction == "download":
             os.replace(tmp_remote, DB_NAME)
@@ -213,11 +276,12 @@ def sync_s3() -> str:
         return "S3 sync: boto3 not installed. Run: pip install boto3"
     
     bucket = (settings.get("sync_s3_bucket") or "").strip()
-    key = (settings.get("sync_s3_key") or "sweethart.db").strip()
+    key = (settings.get("sync_s3_key") or "taskmask.db").strip()
     region = (settings.get("sync_s3_region") or "us-east-1").strip()
     access_key = (settings.get("sync_s3_access_key") or "").strip()
     secret_key = (settings.get("sync_s3_secret_key") or "").strip()
-    conflict = settings.get("sync_conflict", "prefer_newer")
+    # Always prefer the most recently modified DB (local vs server),
+    # regardless of any older "sync_conflict" setting.
     
     if not bucket or not access_key or not secret_key:
         return "S3 sync: missing bucket, access key, or secret key"
@@ -263,14 +327,10 @@ def sync_s3() -> str:
             os.remove(tmp_remote)
             return "S3 sync: up-to-date"
         
-        # Decide direction
-        direction = "download"
-        if conflict == "prefer_local":
-            direction = "upload"
-        elif conflict == "prefer_server":
-            direction = "download"
-        else:  # prefer_newer
-            direction = "upload" if local_mtime >= server_mtime else "download"
+        # Decide direction based purely on which copy is newer.
+        # - If local DB is newer (or same time), upload to server.
+        # - If server DB is newer, download from server.
+        direction = "upload" if local_mtime >= server_mtime else "download"
         
         if direction == "download":
             os.replace(tmp_remote, DB_NAME)
@@ -292,8 +352,8 @@ def sync_http() -> str:
     server = (settings.get("sync_server_url") or "").strip()
     user = (settings.get("sync_user") or "default").strip() or "default"
     token = (settings.get("sync_token") or "").strip()
-    conflict = settings.get("sync_conflict", "prefer_newer")
-
+    # Always prefer the most recently modified DB (local vs server),
+    # regardless of any older "sync_conflict" setting.
     if not server:
         return "HTTP sync: missing server URL"
 
@@ -330,14 +390,10 @@ def sync_http() -> str:
     if local_exists and local_sha and server_sha and local_sha == server_sha:
         return "HTTP sync: up-to-date"
 
-    # Decide direction
-    direction = "download"
-    if conflict == "prefer_local":
-        direction = "upload"
-    elif conflict == "prefer_server":
-        direction = "download"
-    else:  # prefer_newer
-        direction = "upload" if local_mtime >= server_mtime else "download"
+    # Decide direction based purely on which copy is newer.
+    # - If local DB is newer (or same time), upload to server.
+    # - If server DB is newer, download from server.
+    direction = "upload" if local_mtime >= server_mtime else "download"
 
     if direction == "download":
         data = http_download_bytes(db_url, headers=headers, timeout=30)
@@ -422,22 +478,22 @@ def get_db_path() -> str:
     """
     DB location strategy:
     - If a 'portable.txt' file exists next to task.py, keep DB in ./database (portable mode).
-    - Otherwise use %APPDATA%\\DailyDashboard\\database\\sweethart.db
+    - Otherwise use %APPDATA%\\DailyDashboard\\database\\taskmask.db
     - One-time migration from legacy hardcoded folder if present.
     """
     portable_flag = os.path.join(os.getcwd(), "portable.txt")
     if os.path.exists(portable_flag):
         db_dir = os.path.join(os.getcwd(), "database")
         os.makedirs(db_dir, exist_ok=True)
-        return os.path.join(db_dir, "sweethart.db")
+        return os.path.join(db_dir, "taskmask.db")
 
     app_dir = get_app_data_dir()
     db_dir = os.path.join(app_dir, "database")
     os.makedirs(db_dir, exist_ok=True)
-    new_db = os.path.join(db_dir, "sweethart.db")
+    new_db = os.path.join(db_dir, "taskmask.db")
 
     # Legacy migration (old hardcoded path)
-    legacy_db = os.path.join(r"C:\YAMiN\database", "sweethart.db")
+    legacy_db = os.path.join(r"C:\YAMiN\database", "taskmask.db")
     try:
         if not os.path.exists(new_db) and os.path.exists(legacy_db):
             shutil.copy2(legacy_db, new_db)
@@ -461,6 +517,9 @@ todo_data: dict[str, dict] = {}  # uuid -> {task, done, deadline, done_at, creat
 
 # Global icon path
 ICON_PATH = resource_path("icon.ico")
+
+# Import shared icon utility
+from icon_utils import set_window_icon as set_icon_shared
 
 # ----------- TASK LISTBOX FORMATTING -----------
 DEADLINE_RAW_FMT = "%Y-%m-%d %H:%M"
@@ -623,12 +682,8 @@ def apply_todo_item_style(index: int, done: bool, deadline_raw: str):
     pass
 
 def set_window_icon(window):
-    """Set icon for a window if icon file exists"""
-    try:
-        if os.path.exists(ICON_PATH):
-            window.iconbitmap(ICON_PATH)
-    except Exception as e:
-        print(f"Error setting window icon: {e}")
+    """Set icon for a window if icon file exists - uses shared icon utility"""
+    set_icon_shared(window)
 
 def center_window_relative_to_parent(child_window, width, height):
     """Center a child window relative to the main root window"""
@@ -808,6 +863,72 @@ def persist_todos_to_db(todo_order: list[str]):
     conn.commit()
     conn.close()
 
+def archive_completed_tasks():
+    """Move completed tasks to archive if they've been done for more than threshold hours."""
+    try:
+        threshold_hours = int(settings.get("archive_threshold_hours", 8))
+        threshold_seconds = threshold_hours * 3600
+        current_time = datetime.now()
+        
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        
+        # Get all completed tasks that haven't been archived yet
+        c.execute("SELECT uuid, task, done, deadline, done_at, created_at FROM todos WHERE done = 1 AND done_at IS NOT NULL AND done_at != ''")
+        completed_tasks = c.fetchall()
+        
+        archived_count = 0
+        for uuid_val, task, done, deadline, done_at, created_at in completed_tasks:
+            if not done_at:
+                continue
+            
+            try:
+                # Parse done_at timestamp
+                done_time = datetime.strptime(done_at, TS_FMT)
+                time_since_done = (current_time - done_time).total_seconds()
+                
+                # If task has been done for more than threshold, archive it
+                if time_since_done >= threshold_seconds:
+                    # Check if already archived
+                    c.execute("SELECT id FROM archive_todos WHERE uuid = ?", (uuid_val,))
+                    if c.fetchone():
+                        # Already archived, just remove from todos
+                        c.execute("DELETE FROM todos WHERE uuid = ?", (uuid_val,))
+                    else:
+                        # Move to archive
+                        c.execute("""
+                            INSERT INTO archive_todos (uuid, task, done_at, deadline, created_at, archived_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (uuid_val, task, done_at, deadline or "", created_at or now_ts(), now_ts()))
+                        c.execute("DELETE FROM todos WHERE uuid = ?", (uuid_val,))
+                        archived_count += 1
+            except ValueError:
+                # Invalid timestamp format, skip
+                continue
+        
+        conn.commit()
+        conn.close()
+        
+        # Refresh UI if any tasks were archived
+        if archived_count > 0:
+            load_todo_data_from_db()
+            refresh_todo_tree()
+            update_status_bar()
+        
+        return archived_count
+    except Exception as e:
+        print(f"Archive error: {e}")
+        return 0
+
+def load_archived_todos():
+    """Load archived tasks from database."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT uuid, task, done_at, deadline, created_at, archived_at FROM archive_todos ORDER BY archived_at DESC")
+    archived = c.fetchall()
+    conn.close()
+    return archived
+
 def save_todos(todo_listbox):
     # Backward-compatible stub (todo_listbox no longer the primary UI).
     # If old code paths call this, keep DB consistent by reloading UI from DB later.
@@ -929,6 +1050,8 @@ def add_timer_window(selected_uuid: str | None = None):
         return
     
     timer_window = tk.Toplevel(root)
+    # Create hidden first to avoid visible "jump" animation, then center and show
+    timer_window.withdraw()
     timer_window.title("Set Deadline")
     timer_window.config(bg="#f5f7fa")
     timer_window.resizable(False, False)
@@ -938,6 +1061,7 @@ def add_timer_window(selected_uuid: str | None = None):
     
     # Center window relative to main window
     center_window_relative_to_parent(timer_window, 500, 600)
+    timer_window.deiconify()
     
     # Make modal
     timer_window.transient(root)
@@ -1172,11 +1296,12 @@ def update_timers():
                         sound_file = resource_path("assets", "overdue.mp3")
                         if os.path.exists(sound_file):
                             threading.Thread(target=lambda: playsound(sound_file, block=False), daemon=True).start()
-                        else:
+                        elif winsound:
                             winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
                     except Exception:
                         try:
-                            winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+                            if winsound:
+                                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
                         except Exception:
                             pass
                     overdue_sound_played.add(uuid_val)
@@ -1275,6 +1400,8 @@ def on_todo_key(event):
 
 def add_link_window():
     link_window = tk.Toplevel(root)
+    # Create hidden first to avoid visible "jump" animation, then center and show
+    link_window.withdraw()
     link_window.title("Add New Link")
     link_window.config(bg="#f5f7fa")
     link_window.resizable(False, False)
@@ -1284,6 +1411,7 @@ def add_link_window():
     
     # Center window relative to main window
     center_window_relative_to_parent(link_window, 480, 450)
+    link_window.deiconify()
     
     # Make modal
     link_window.transient(root)
@@ -1412,6 +1540,8 @@ def delete_and_refresh_link(link_id):
 
 def add_note_window():
     note_window = tk.Toplevel(root)
+    # Create hidden first to avoid visible "jump" animation, then center and show
+    note_window.withdraw()
     note_window.title("Add New Note")
     note_window.config(bg="white")
     note_window.resizable(False, False)
@@ -1421,6 +1551,7 @@ def add_note_window():
     
     # Center window relative to main window
     center_window_relative_to_parent(note_window, 600, 500)
+    note_window.deiconify()
     
     # Make modal
     note_window.transient(root)
@@ -1475,6 +1606,8 @@ def edit_note_window(note_id):
         return
     
     edit_window = tk.Toplevel(root)
+    # Create hidden first to avoid visible "jump" animation, then center and show
+    edit_window.withdraw()
     edit_window.title("Edit Note")
     edit_window.config(bg="#f5f7fa")
     edit_window.resizable(False, False)
@@ -1484,6 +1617,7 @@ def edit_note_window(note_id):
     
     # Center window relative to main window - make it taller with scrollability
     center_window_relative_to_parent(edit_window, 700, 800)
+    edit_window.deiconify()
     
     # Make modal
     edit_window.transient(root)
@@ -1669,6 +1803,8 @@ def view_note(event):
         for note in notes:
             if note[0] == note_id:
                 view_window = tk.Toplevel(root)
+                # Create hidden first to avoid visible "jump" animation, then center and show
+                view_window.withdraw()
                 view_window.title(note[1])
                 view_window.config(bg="white")
                 view_window.resizable(False, False)
@@ -1678,6 +1814,7 @@ def view_note(event):
                 
                 # Center window relative to main window
                 center_window_relative_to_parent(view_window, 600, 400)
+                view_window.deiconify()
                 
                 # Make modal
                 view_window.transient(root)
@@ -1737,7 +1874,56 @@ def view_note(event):
 init_db()
 settings = load_settings()
 root = tk.Tk()
-root.title("🧠 Advanced Daily Dashboard")
+
+# Hide console window on Windows (must be done after root is created)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        # Get console window handle
+        console_window = kernel32.GetConsoleWindow()
+        if console_window:
+            # SW_HIDE = 0 - hides the window
+            user32.ShowWindow(console_window, 0)
+            # Also try FreeConsole to detach from console
+            try:
+                kernel32.FreeConsole()
+            except:
+                pass
+    except Exception:
+        pass
+
+# Set application icon early for best cross-platform taskbar support
+# Must be set before window is displayed for proper taskbar icon on Linux/Windows
+# On Windows, we need to set it before any window operations
+root.withdraw()  # Hide window temporarily
+set_window_icon(root)
+root.update()  # Force update to ensure icon is applied
+
+# Hide console again after window operations (sometimes needed)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        console_window = kernel32.GetConsoleWindow()
+        if console_window:
+            user32.ShowWindow(console_window, 0)
+    except Exception:
+        pass
+
+root.deiconify()  # Show window after icon is set
+
+# Set icon multiple times to force Windows to recognize it
+# Windows sometimes caches the Python icon, so we need to be persistent
+def set_icon_repeatedly():
+    set_window_icon(root)
+    root.after(50, set_icon_repeatedly)  # Keep setting it every 50ms for first second
+root.after(10, set_icon_repeatedly)
+root.after(1000, lambda: None)  # Stop after 1 second
+
+root.title("Advanced Daily Dashboard")
 try:
     sw = root.winfo_screenwidth()
     sh = root.winfo_screenheight()
@@ -1751,17 +1937,6 @@ except Exception:
     root.geometry("1024x768")
     root.minsize(950, 700)
 root.config(bg="#eaf4fc")
-
-# Set application icon
-try:
-    icon_path = ICON_PATH
-    if os.path.exists(icon_path):
-        root.iconbitmap(icon_path)
-        print(f"Application icon loaded: {icon_path}")
-    else:
-        print(f"Icon file not found: {icon_path}")
-except Exception as e:
-    print(f"Error loading icon: {e}")
 
 def apply_theme():
     """Basic light/dark theme for main surfaces. (Listboxes are styled manually)."""
@@ -1786,7 +1961,7 @@ apply_theme()
 # ----------- MENU BAR -----------
 def backup_database():
     try:
-        default_name = f"sweethart-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+        default_name = f"taskmask-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
         path = filedialog.asksaveasfilename(
             title="Backup Database",
             defaultextension=".db",
@@ -1826,6 +2001,8 @@ def restore_database():
 
 def open_settings_window():
     win = tk.Toplevel(root)
+    # Create hidden first to avoid visible "jump" animation, then center and show
+    win.withdraw()
     win.title("Settings")
     win.config(bg="white")
     win.resizable(False, False)
@@ -1833,6 +2010,7 @@ def open_settings_window():
     
     # Center window relative to main window - increased height for new fields
     center_window_relative_to_parent(win, 580, 750)
+    win.deiconify()
     
     # Make modal
     win.transient(root)
@@ -1879,6 +2057,36 @@ def open_settings_window():
     theme_var = tk.StringVar(value=settings.get("theme", "light"))
     tk.Radiobutton(theme_frame, text="Light", value="light", variable=theme_var, bg="white").pack(anchor="w")
     tk.Radiobutton(theme_frame, text="Dark", value="dark", variable=theme_var, bg="white").pack(anchor="w")
+    
+    # Display settings - Individual clock visibility
+    display_frame = tk.LabelFrame(container, text="Analog Clocks Display", font=("Segoe UI", 10, "bold"), bg="white", fg="#111", padx=12, pady=10)
+    display_frame.pack(fill="x", pady=(0, 10))
+    
+    tk.Label(display_frame, text="Show/Hide individual clocks:", bg="white", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 5))
+    
+    show_clock_us_var = tk.BooleanVar(value=bool(settings.get("show_clock_us", True)))
+    tk.Checkbutton(display_frame, text="🇺🇸 US (America/New_York)", variable=show_clock_us_var, bg="white").pack(anchor="w", padx=10)
+    
+    show_clock_uk_var = tk.BooleanVar(value=bool(settings.get("show_clock_uk", True)))
+    tk.Checkbutton(display_frame, text="🇬🇧 UK (Europe/London)", variable=show_clock_uk_var, bg="white").pack(anchor="w", padx=10)
+    
+    show_clock_japan_var = tk.BooleanVar(value=bool(settings.get("show_clock_japan", True)))
+    tk.Checkbutton(display_frame, text="🇯🇵 Japan (Asia/Tokyo)", variable=show_clock_japan_var, bg="white").pack(anchor="w", padx=10)
+    
+    show_clock_bd_var = tk.BooleanVar(value=bool(settings.get("show_clock_bangladesh", True)))
+    tk.Checkbutton(display_frame, text="🇧🇩 Bangladesh (Asia/Dhaka)", variable=show_clock_bd_var, bg="white").pack(anchor="w", padx=10)
+    
+    show_clock_india_var = tk.BooleanVar(value=bool(settings.get("show_clock_india", True)))
+    tk.Checkbutton(display_frame, text="🇮🇳 India (Asia/Kolkata)", variable=show_clock_india_var, bg="white").pack(anchor="w", padx=10)
+    
+    show_clock_singapore_var = tk.BooleanVar(value=bool(settings.get("show_clock_singapore", True)))
+    tk.Checkbutton(display_frame, text="🇸🇬 Singapore (Asia/Singapore)", variable=show_clock_singapore_var, bg="white").pack(anchor="w", padx=10)
+    
+    # Date and Time Display setting
+    tk.Label(display_frame, text="", bg="white").pack(anchor="w", pady=(5, 0))  # Spacer
+    show_datetime_var = tk.BooleanVar(value=bool(settings.get("show_datetime", True)))
+    tk.Checkbutton(display_frame, text="📅 Show Date and Time Display", variable=show_datetime_var, bg="white", 
+                   font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=(5, 0))
 
     # Sync
     sync_frame = tk.LabelFrame(container, text="Server Sync (optional)", font=("Segoe UI", 10, "bold"), bg="white", fg="#111", padx=12, pady=10)
@@ -1947,7 +2155,7 @@ def open_settings_window():
     tk.Entry(s3_frame, textvariable=s3_bucket_var).grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=(0, 4))
 
     tk.Label(s3_frame, text="S3 Key (filename):", bg="white").grid(row=1, column=0, sticky="w", pady=(0, 4))
-    s3_key_var = tk.StringVar(value=settings.get("sync_s3_key", "sweethart.db"))
+    s3_key_var = tk.StringVar(value=settings.get("sync_s3_key", "taskmask.db"))
     tk.Entry(s3_frame, textvariable=s3_key_var).grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(0, 4))
 
     tk.Label(s3_frame, text="S3 Region:", bg="white").grid(row=2, column=0, sticky="w", pady=(0, 4))
@@ -1969,6 +2177,105 @@ def open_settings_window():
     tk.Entry(sync_frame, textvariable=interval_var, width=10).grid(row=5, column=1, sticky="w", padx=(10, 0), pady=(8, 0))
 
     sync_frame.columnconfigure(1, weight=1)
+
+    # Connection test status label
+    test_status_var = tk.StringVar(value="")
+    test_status_label = tk.Label(sync_frame, textvariable=test_status_var, bg="white",
+                                 fg="#555", font=("Segoe UI", 9))
+    test_status_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+    def _set_test_status(msg: str, color: str = "#198754"):
+        """Update small status text inside Settings sync section."""
+        test_status_var.set(msg)
+        test_status_label.config(fg=color)
+
+    def _test_http_connection():
+        url = url_var.get().strip()
+        if not url:
+            _set_test_status("HTTP: Server URL is empty.", "#dc3545")
+            return
+        user = (user_var.get().strip() or "default")
+        token = token_var.get().strip()
+        headers = {}
+        if token:
+            headers["X-Token"] = token
+        try:
+            meta_url = _join_url(url, "/api/meta", {"user": user})
+            resp = http_get_json(meta_url, headers=headers, timeout=5)
+            # Show compact response summary
+            exists = resp.get("exists", None)
+            _set_test_status(f"HTTP OK: meta exists={exists}", "#198754")
+        except Exception as e:
+            _set_test_status(f"HTTP error: {e}", "#dc3545")
+
+    def _test_ftp_connection():
+        host = ftp_host_var.get().strip()
+        user = ftp_user_var.get().strip()
+        if not host or not user:
+            _set_test_status("FTP: Host or user is empty.", "#dc3545")
+            return
+        try:
+            port = int(ftp_port_var.get() or 21)
+        except ValueError:
+            port = 21
+        password = ftp_pass_var.get()
+        try:
+            ftp = ftplib.FTP()
+            ftp.connect(host, port, timeout=5)
+            ftp.login(user, password)
+            cwd = ftp.pwd()
+            ftp.quit()
+            _set_test_status(f"FTP OK: connected (cwd: {cwd})", "#198754")
+        except Exception as e:
+            _set_test_status(f"FTP error: {e}", "#dc3545")
+
+    def _test_s3_connection():
+        if not S3_AVAILABLE:
+            _set_test_status("S3: boto3 not installed.", "#dc3545")
+            return
+        bucket = s3_bucket_var.get().strip()
+        region = (s3_region_var.get().strip() or "us-east-1")
+        access_key = s3_access_var.get().strip()
+        secret_key = s3_secret_var.get().strip()
+        if not bucket or not access_key or not secret_key:
+            _set_test_status("S3: bucket or credentials missing.", "#dc3545")
+            return
+        try:
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region,
+            )
+            # Cheap check: does bucket exist / is it reachable?
+            s3.head_bucket(Bucket=bucket)
+            _set_test_status("S3 OK: bucket reachable.", "#198754")
+        except Exception as e:
+            _set_test_status(f"S3 error: {e}", "#dc3545")
+
+    def test_connection():
+        """Test connection for the currently selected sync type without changing any data."""
+        _set_test_status("Testing connection...", "#0d6efd")
+        sync_type = sync_type_var.get()
+        if sync_type == "http":
+            _test_http_connection()
+        elif sync_type == "ftp":
+            _test_ftp_connection()
+        else:  # s3
+            _test_s3_connection()
+
+    # Test Connection button
+    test_btn = tk.Button(
+        sync_frame,
+        text="Test Connection",
+        command=test_connection,
+        bg="#0d6efd",
+        fg="white",
+        font=("Segoe UI", 9, "bold"),
+        padx=10,
+        pady=4,
+    )
+    test_btn.grid(row=6, column=1, sticky="e", pady=(8, 0))
 
     def update_sync_fields():
         sync_type = sync_type_var.get()
@@ -2007,7 +2314,7 @@ def open_settings_window():
         settings["sync_ftp_pass"] = ftp_pass_var.get().strip()
         settings["sync_ftp_path"] = ftp_path_var.get().strip() or "/"
         settings["sync_s3_bucket"] = s3_bucket_var.get().strip()
-        settings["sync_s3_key"] = s3_key_var.get().strip() or "sweethart.db"
+        settings["sync_s3_key"] = s3_key_var.get().strip() or "taskmask.db"
         settings["sync_s3_region"] = s3_region_var.get().strip() or "us-east-1"
         settings["sync_s3_access_key"] = s3_access_var.get().strip()
         settings["sync_s3_secret_key"] = s3_secret_var.get().strip()
@@ -2015,8 +2322,19 @@ def open_settings_window():
             settings["sync_interval_sec"] = max(10, int(interval_var.get()))
         except ValueError:
             settings["sync_interval_sec"] = 60
+        settings["show_clock_us"] = bool(show_clock_us_var.get())
+        settings["show_clock_uk"] = bool(show_clock_uk_var.get())
+        settings["show_clock_japan"] = bool(show_clock_japan_var.get())
+        settings["show_clock_bangladesh"] = bool(show_clock_bd_var.get())
+        settings["show_clock_india"] = bool(show_clock_india_var.get())
+        settings["show_clock_singapore"] = bool(show_clock_singapore_var.get())
+        settings["show_datetime"] = bool(show_datetime_var.get())
         save_settings(settings)
         apply_theme()
+        # Update clock visibility
+        update_clocks_visibility()
+        # Update date/time visibility
+        update_datetime_visibility()
         win.destroy()
 
     tk.Button(btns, text="Close", command=win.destroy, bg="#6c757d", fg="white", padx=12, pady=5).pack(side="left")
@@ -2030,10 +2348,496 @@ file_menu.add_separator()
 file_menu.add_command(label="Exit", command=root.destroy)
 menubar.add_cascade(label="File", menu=file_menu)
 
+def open_mysql_backup_gui():
+    """Open MySQL Backup GUI in a separate process."""
+    try:
+        # Get the path to the MySQL backup GUI script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        mysql_gui_path = os.path.join(script_dir, "mysql_client", "mysql_backup_gui.py")
+        
+        # Check if file exists
+        if not os.path.exists(mysql_gui_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"MySQL Backup GUI not found at:\n{mysql_gui_path}\n\nPlease ensure the file exists."
+            )
+            return
+        
+        # Launch the MySQL backup GUI in a separate process (no console window)
+        if sys.platform == "win32":
+            # Windows - use CREATE_NO_WINDOW to hide console
+            try:
+                # CREATE_NO_WINDOW = 0x08000000
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.Popen(
+                    [sys.executable, mysql_gui_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW
+                )
+            except Exception as e:
+                # Fallback if CREATE_NO_WINDOW not available
+                subprocess.Popen(
+                    [sys.executable, mysql_gui_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+        else:
+            # Linux/Mac
+            subprocess.Popen(
+                [sys.executable, mysql_gui_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to open MySQL Backup GUI:\n{str(e)}")
+
+def open_ftp_client_gui():
+    """Open FTP/FTPS/SFTP Client GUI in a separate process."""
+    try:
+        # Get the path to the FTP client GUI script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        ftp_gui_path = os.path.join(script_dir, "ftp_client", "ftp_client_gui.py")
+        
+        # Check if file exists
+        if not os.path.exists(ftp_gui_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"FTP Client GUI not found at:\n{ftp_gui_path}\n\nPlease ensure the file exists."
+            )
+            return
+        
+        # Launch the FTP client GUI in a separate process (no console window)
+        if sys.platform == "win32":
+            # Windows - use CREATE_NO_WINDOW to hide console
+            try:
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.Popen(
+                    [sys.executable, ftp_gui_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW
+                )
+            except Exception as e:
+                # Fallback if CREATE_NO_WINDOW not available
+                try:
+                    subprocess.Popen(
+                        [sys.executable, ftp_gui_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except Exception as e2:
+                    messagebox.showerror("Error", f"Failed to launch FTP Client GUI:\n{str(e2)}")
+        else:
+            # Linux/Mac
+            try:
+                subprocess.Popen(
+                    [sys.executable, ftp_gui_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to launch FTP Client GUI:\n{str(e)}")
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        messagebox.showerror("Error", f"Failed to open FTP Client GUI:\n{str(e)}\n\nDetails:\n{error_details}")
+
+def open_media_downloader():
+    """Open Media Downloader GUI in a separate process."""
+    try:
+        # Get the path to the media downloader script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        media_downloader_path = os.path.join(script_dir, "media_downloader", "media-download.py")
+        
+        # Check if file exists
+        if not os.path.exists(media_downloader_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"Media Downloader not found at:\n{media_downloader_path}\n\nPlease ensure the file exists."
+            )
+            return
+        
+        # Launch the media downloader in a separate process (no console window)
+        if sys.platform == "win32":
+            # Windows - use CREATE_NO_WINDOW to hide console
+            try:
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.Popen(
+                    [sys.executable, media_downloader_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW
+                )
+            except Exception as e:
+                # Fallback if CREATE_NO_WINDOW not available
+                try:
+                    subprocess.Popen(
+                        [sys.executable, media_downloader_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except Exception as e2:
+                    messagebox.showerror("Error", f"Failed to launch Media Downloader:\n{str(e2)}")
+        else:
+            # Linux/Mac - run in background
+            try:
+                subprocess.Popen(
+                    [sys.executable, media_downloader_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to launch Media Downloader:\n{str(e)}")
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        messagebox.showerror("Error", f"Failed to open Media Downloader:\n{str(e)}\n\nDetails:\n{error_details}")
+
+def open_shell_gui():
+    """Open Advanced Shell GUI in a separate process."""
+    try:
+        # Get the path to the shell GUI script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        shell_gui_path = os.path.join(script_dir, "shell_yamin", "shell_gui.py")
+        
+        # Check if file exists
+        if not os.path.exists(shell_gui_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"Shell GUI not found at:\n{shell_gui_path}\n\nPlease ensure the file exists."
+            )
+            return
+        
+        # Launch the shell GUI in a separate process (no console window)
+        if sys.platform == "win32":
+            # Windows - use CREATE_NO_WINDOW to hide console
+            try:
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.Popen(
+                    [sys.executable, shell_gui_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW
+                )
+            except Exception as e:
+                # Fallback if CREATE_NO_WINDOW not available
+                try:
+                    subprocess.Popen(
+                        [sys.executable, shell_gui_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except Exception as e2:
+                    messagebox.showerror("Error", f"Failed to launch Shell GUI:\n{str(e2)}")
+        else:
+            # Linux/Mac
+            try:
+                subprocess.Popen(
+                    [sys.executable, shell_gui_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to launch Shell GUI:\n{str(e)}")
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        messagebox.showerror("Error", f"Failed to open Shell GUI:\n{str(e)}\n\nDetails:\n{error_details}")
+
 tools_menu = tk.Menu(menubar, tearoff=0)
 tools_menu.add_command(label="Sync Now", command=lambda: sync_once_async())
 tools_menu.add_command(label="Settings...", command=open_settings_window)
+tools_menu.add_separator()
+tools_menu.add_command(label="MySQL Backup Tool...", command=open_mysql_backup_gui)
+tools_menu.add_command(label="FTP/FTPS/SFTP Client...", command=open_ftp_client_gui)
+tools_menu.add_command(label="Media Downloader...", command=open_media_downloader)
+tools_menu.add_separator()
+tools_menu.add_command(label="🔧 Advanced Shell...", command=open_shell_gui)
 menubar.add_cascade(label="Tools", menu=tools_menu)
+
+def open_archive_window():
+    """Open Archive window showing archived tasks."""
+    archive_window = tk.Toplevel(root)
+    archive_window.withdraw()
+    archive_window.title("📦 Archive - Completed Tasks")
+    archive_window.config(bg="#eaf4fc")
+    
+    # Use same size calculation as main window (85% of screen)
+    try:
+        sw = archive_window.winfo_screenwidth()
+        sh = archive_window.winfo_screenheight()
+        w = int(sw * 0.85)
+        h = int(sh * 0.85)
+        x = max(0, (sw - w) // 2)
+        y = max(0, (sh - h) // 2)
+        archive_window.geometry(f"{w}x{h}+{x}+{y}")
+        archive_window.minsize(950, 700)
+    except Exception:
+        archive_window.geometry("1024x768")
+        archive_window.minsize(950, 700)
+    
+    # Make window resizable
+    archive_window.resizable(True, True)
+    
+    set_window_icon(archive_window)
+    archive_window.deiconify()
+    
+    # Header
+    header_frame = tk.Frame(archive_window, bg="#007bff", height=60)
+    header_frame.pack(fill="x")
+    header_frame.pack_propagate(False)
+    
+    title_label = tk.Label(header_frame, text="📦 Archive - Completed Tasks", 
+                          font=("Segoe UI", 16, "bold"), bg="#007bff", fg="white", pady=15)
+    title_label.pack()
+    
+    # Main container
+    main_container = tk.Frame(archive_window, bg="#eaf4fc")
+    main_container.pack(fill="both", expand=True, padx=20, pady=20)
+    
+    # Settings frame at top
+    settings_frame = tk.Frame(main_container, bg="white", relief="flat", bd=1, 
+                             highlightbackground="#ddd", highlightthickness=1)
+    settings_frame.pack(fill="x", pady=(0, 15), padx=0)
+    
+    settings_inner = tk.Frame(settings_frame, bg="white", padx=15, pady=10)
+    settings_inner.pack(fill="x")
+    
+    tk.Label(settings_inner, text="Archive Settings", font=("Segoe UI", 12, "bold"), 
+             bg="white", fg="#111").pack(side="left", padx=(0, 15))
+    
+    tk.Label(settings_inner, text="Auto-archive tasks after:", font=("Segoe UI", 10), 
+             bg="white", fg="#555").pack(side="left", padx=(0, 5))
+    
+    threshold_var = tk.StringVar(value=str(settings.get("archive_threshold_hours", 8)))
+    threshold_entry = tk.Entry(settings_inner, textvariable=threshold_var, width=5, 
+                               font=("Segoe UI", 10))
+    threshold_entry.pack(side="left", padx=(0, 5))
+    
+    tk.Label(settings_inner, text="hours", font=("Segoe UI", 10), 
+             bg="white", fg="#555").pack(side="left", padx=(0, 10))
+    
+    def save_threshold():
+        try:
+            hours = int(threshold_var.get())
+            if hours < 0:
+                messagebox.showerror("Error", "Hours must be 0 or greater")
+                return
+            settings["archive_threshold_hours"] = hours
+            save_settings(settings)
+            messagebox.showinfo("Success", f"Archive threshold set to {hours} hours")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number")
+    
+    tk.Button(settings_inner, text="Save", command=save_threshold, 
+             bg="#28a745", fg="white", font=("Segoe UI", 9, "bold"),
+             padx=12, pady=4).pack(side="left", padx=(0, 10))
+    
+    def refresh_archive():
+        """Refresh the archive list."""
+        archived_todos = load_archived_todos()
+        
+        # Clear existing items
+        for item in archive_tree.get_children():
+            archive_tree.delete(item)
+        
+        # Add archived tasks
+        for uuid_val, task, done_at, deadline, created_at, archived_at in archived_todos:
+            # Format dates
+            done_at_display = ""
+            if done_at:
+                try:
+                    dt = datetime.strptime(done_at, TS_FMT)
+                    done_at_display = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    done_at_display = done_at
+            
+            archived_at_display = ""
+            if archived_at:
+                try:
+                    dt = datetime.strptime(archived_at, TS_FMT)
+                    archived_at_display = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    archived_at_display = archived_at
+            
+            created_display = _format_created_display(created_at or "")
+            deadline_display = _format_deadline_display(deadline or "")
+            
+            archive_tree.insert("", "end", iid=uuid_val, values=(
+                "✅", task or "", created_display, deadline_display, done_at_display, archived_at_display
+            ), tags=("done",))
+        
+        # Update count
+        count_label.config(text=f"Total Archived: {len(archived_todos)} tasks")
+    
+    tk.Button(settings_inner, text="🔄 Refresh", command=refresh_archive,
+             bg="#007bff", fg="white", font=("Segoe UI", 9),
+             padx=10, pady=4).pack(side="right")
+    
+    # Count label
+    count_label = tk.Label(settings_frame, text="Total Archived: 0 tasks", 
+                          font=("Segoe UI", 9), bg="white", fg="#666")
+    count_label.pack(pady=(0, 10))
+    
+    # Archive tree
+    tree_frame = tk.Frame(main_container, bg="white", relief="flat", bd=1,
+                         highlightbackground="#ddd", highlightthickness=1)
+    tree_frame.pack(fill="both", expand=True)
+    
+    archive_tree = ttk.Treeview(
+        tree_frame,
+        columns=("status", "task", "created", "deadline", "done_at", "archived_at"),
+        show="headings",
+        selectmode="browse",
+    )
+    archive_tree.heading("status", text="✓")
+    archive_tree.heading("task", text="Task")
+    archive_tree.heading("created", text="Created")
+    archive_tree.heading("deadline", text="Deadline")
+    archive_tree.heading("done_at", text="Completed At")
+    archive_tree.heading("archived_at", text="Archived At")
+    
+    archive_tree.column("status", width=40, anchor="center", stretch=False)
+    archive_tree.column("task", width=300, anchor="w", stretch=True)
+    archive_tree.column("created", width=180, anchor="center", stretch=False)
+    archive_tree.column("deadline", width=200, anchor="center", stretch=False)
+    archive_tree.column("done_at", width=180, anchor="center", stretch=False)
+    archive_tree.column("archived_at", width=180, anchor="center", stretch=False)
+    
+    # Configure tags
+    archive_tree.tag_configure("done", foreground="#1e7e34")
+    
+    archive_tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=archive_tree.yview)
+    archive_tree.configure(yscrollcommand=archive_tree_scroll.set)
+    archive_tree_scroll.pack(side="right", fill="y")
+    archive_tree.pack(side="left", fill="both", expand=True)
+    
+    # Context menu
+    archive_menu = tk.Menu(archive_tree, tearoff=0)
+    
+    def restore_selected_task():
+        """Restore selected task from archive back to active todos."""
+        selection = archive_tree.selection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a task to restore")
+            return
+        
+        uuid_val = selection[0]
+        archived_todos = load_archived_todos()
+        
+        # Find the task
+        task_data = None
+        for arch_uuid, task, done_at, deadline, created_at, archived_at in archived_todos:
+            if arch_uuid == uuid_val:
+                task_data = {
+                    "task": task,
+                    "done": False,  # Restore as not done
+                    "deadline": deadline or "",
+                    "done_at": "",
+                    "created_at": created_at or now_ts(),
+                    "order_index": len(todo_data),
+                }
+                break
+        
+        if not task_data:
+            messagebox.showerror("Error", "Task not found")
+            return
+        
+        if messagebox.askyesno("Restore Task", f"Restore task '{task_data['task']}' to active list?"):
+            conn = sqlite3.connect(DB_NAME)
+            c = conn.cursor()
+            
+            # Add back to todos
+            c.execute("""
+                INSERT INTO todos (uuid, task, done, deadline, done_at, created_at, order_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (uuid_val, task_data["task"], 0, task_data["deadline"], "", 
+                  task_data["created_at"], task_data["order_index"]))
+            
+            # Remove from archive
+            c.execute("DELETE FROM archive_todos WHERE uuid = ?", (uuid_val,))
+            
+            conn.commit()
+            conn.close()
+            
+            # Refresh both lists
+            load_todo_data_from_db()
+            refresh_todo_tree()
+            update_status_bar()
+            refresh_archive()
+            messagebox.showinfo("Success", "Task restored to active list")
+    
+    def delete_archived_task():
+        """Permanently delete selected archived task."""
+        selection = archive_tree.selection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a task to delete")
+            return
+        
+        uuid_val = selection[0]
+        
+        if messagebox.askyesno("Confirm Delete", "Permanently delete this archived task?"):
+            conn = sqlite3.connect(DB_NAME)
+            c = conn.cursor()
+            c.execute("DELETE FROM archive_todos WHERE uuid = ?", (uuid_val,))
+            conn.commit()
+            conn.close()
+            refresh_archive()
+            messagebox.showinfo("Success", "Task deleted permanently")
+    
+    archive_menu.add_command(label="↩️ Restore to Active", command=restore_selected_task)
+    archive_menu.add_separator()
+    archive_menu.add_command(label="🗑️ Delete Permanently", command=delete_archived_task)
+    
+    def show_archive_menu(event):
+        try:
+            row_id = archive_tree.identify_row(event.y)
+            if row_id:
+                archive_tree.selection_set(row_id)
+        except Exception:
+            pass
+        archive_menu.tk_popup(event.x_root, event.y_root)
+    
+    def on_archive_key(event):
+        """Handle keyboard shortcuts for archive list"""
+        if event.keysym == 'Delete':
+            delete_archived_task()
+        elif event.keysym == 'Return':
+            # Restore on Enter key
+            restore_selected_task()
+    
+    # Bind keyboard events
+    archive_tree.bind("<Button-3>", show_archive_menu)
+    archive_tree.bind("<KeyPress-Delete>", on_archive_key)
+    archive_tree.bind("<KeyPress-Return>", on_archive_key)
+    
+    # Load initial data
+    refresh_archive()
+    
+    # Focus on archive_tree so keyboard shortcuts work
+    archive_tree.focus_set()
+    
+    # Add keyboard shortcuts hint
+    shortcuts_hint = tk.Label(main_container, 
+                              text="💡 Keyboard Shortcuts: Delete = Permanently Delete, Enter = Restore to Active", 
+                              font=("Segoe UI", 8), bg="#eaf4fc", fg="#666")
+    shortcuts_hint.pack(pady=(10, 0))
+    
+    # Close button
+    close_btn = tk.Button(main_container, text="Close", command=archive_window.destroy,
+                         bg="#6c757d", fg="white", font=("Segoe UI", 10, "bold"),
+                         padx=20, pady=8)
+    close_btn.pack(pady=(15, 0))
+
+# Archive menu in menubar
+archive_menubar = tk.Menu(menubar, tearoff=0)
+archive_menubar.add_command(label="📦 View Archive...", command=open_archive_window)
+menubar.add_cascade(label="Archive", menu=archive_menubar)
 
 root.config(menu=menubar)
 
@@ -2088,6 +2892,141 @@ canvas_window = main_canvas.create_window((0, 0), window=scrollable_frame, ancho
 scrollbar.pack(side="right", fill="y")
 main_canvas.pack(side="left", fill="both", expand=True)
 
+# ----------- ANALOG CLOCK WIDGET -----------
+class AnalogClock(tk.Canvas):
+    def __init__(self, parent, timezone_name, timezone_str, size=100):
+        self.size = size
+        self.timezone_name = timezone_name
+        self.timezone_str = timezone_str
+        self.timezone = pytz.timezone(timezone_str)
+        self.current_time = None
+        self.tooltip = None
+        
+        tk.Canvas.__init__(self, parent, width=size, height=size+25, bg="#eaf4fc", 
+                          highlightthickness=0, relief="flat", cursor="hand2")
+        
+        self.center_x = size // 2
+        self.center_y = size // 2
+        self.radius = size // 2 - 10
+        
+        # Draw clock face
+        self.create_oval(self.center_x - self.radius, self.center_y - self.radius,
+                        self.center_x + self.radius, self.center_y + self.radius,
+                        outline="#333", width=2, fill="white")
+        
+        # Draw hour markers
+        for i in range(12):
+            angle = math.radians(i * 30 - 90)
+            x1 = self.center_x + (self.radius - 8) * math.cos(angle)
+            y1 = self.center_y + (self.radius - 8) * math.sin(angle)
+            x2 = self.center_x + self.radius * math.cos(angle)
+            y2 = self.center_y + self.radius * math.sin(angle)
+            self.create_line(x1, y1, x2, y2, fill="#333", width=2)
+        
+        # Draw center dot
+        self.create_oval(self.center_x - 3, self.center_y - 3,
+                        self.center_x + 3, self.center_y + 3,
+                        fill="#333", outline="#333")
+        
+        # Store hand lines
+        self.hour_hand = self.create_line(0, 0, 0, 0, fill="#333", width=4, capstyle=tk.ROUND)
+        self.minute_hand = self.create_line(0, 0, 0, 0, fill="#007bff", width=3, capstyle=tk.ROUND)
+        self.second_hand = self.create_line(0, 0, 0, 0, fill="#dc3545", width=2, capstyle=tk.ROUND)
+        
+        # Timezone label
+        self.create_text(self.center_x, size + 12, text=timezone_name, 
+                        font=("Segoe UI", 9, "bold"), fill="#333")
+        
+        # Bind mouse events for tooltip
+        self.bind("<Enter>", self.on_enter)
+        self.bind("<Leave>", self.on_leave)
+        self.bind("<Motion>", self.on_motion)
+        
+        self.update_clock()
+    
+    def on_enter(self, event):
+        """Show tooltip when mouse enters clock"""
+        self.show_tooltip(event)
+    
+    def on_leave(self, event):
+        """Hide tooltip when mouse leaves clock"""
+        self.hide_tooltip()
+    
+    def on_motion(self, event):
+        """Update tooltip position when mouse moves"""
+        if self.tooltip:
+            self.hide_tooltip()
+            self.show_tooltip(event)
+    
+    def show_tooltip(self, event):
+        """Show digital time tooltip"""
+        if not self.current_time:
+            return
+        
+        # Format digital time
+        digital_time = self.current_time.strftime("%I:%M:%S %p")
+        date_str = self.current_time.strftime("%A, %B %d, %Y")
+        tooltip_text = f"{self.timezone_name}\n{digital_time}\n{date_str}"
+        
+        # Create tooltip window
+        self.tooltip = tk.Toplevel(self)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_attributes("-topmost", True)
+        self.tooltip.config(bg="#333", padx=10, pady=8)
+        
+        # Position tooltip near mouse
+        x = event.x_root + 10
+        y = event.y_root + 10
+        self.tooltip.geometry(f"+{x}+{y}")
+        
+        # Create tooltip label
+        tooltip_label = tk.Label(self.tooltip, text=tooltip_text, 
+                                bg="#333", fg="white", font=("Segoe UI", 10, "bold"),
+                                justify="center")
+        tooltip_label.pack()
+    
+    def hide_tooltip(self):
+        """Hide tooltip"""
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
+    
+    def update_clock(self):
+        try:
+            self.current_time = datetime.now(self.timezone)
+            hour = self.current_time.hour % 12
+            minute = self.current_time.minute
+            second = self.current_time.second
+            
+            # Calculate angles (0 degrees = 12 o'clock, clockwise)
+            hour_angle = math.radians((hour * 30 + minute * 0.5) - 90)
+            minute_angle = math.radians((minute * 6) - 90)
+            second_angle = math.radians((second * 6) - 90)
+            
+            # Hour hand (shorter)
+            hour_length = self.radius * 0.5
+            hour_x = self.center_x + hour_length * math.cos(hour_angle)
+            hour_y = self.center_y + hour_length * math.sin(hour_angle)
+            self.coords(self.hour_hand, self.center_x, self.center_y, hour_x, hour_y)
+            
+            # Minute hand (medium)
+            minute_length = self.radius * 0.7
+            minute_x = self.center_x + minute_length * math.cos(minute_angle)
+            minute_y = self.center_y + minute_length * math.sin(minute_angle)
+            self.coords(self.minute_hand, self.center_x, self.center_y, minute_x, minute_y)
+            
+            # Second hand (longest)
+            second_length = self.radius * 0.85
+            second_x = self.center_x + second_length * math.cos(second_angle)
+            second_y = self.center_y + second_length * math.sin(second_angle)
+            self.coords(self.second_hand, self.center_x, self.center_y, second_x, second_y)
+            
+        except Exception:
+            pass
+        
+        # Update every second
+        self.after(1000, self.update_clock)
+
 # Title
 title_frame = tk.Frame(scrollable_frame, bg="#eaf4fc")
 title_frame.pack(fill="x", padx=20, pady=15)
@@ -2096,24 +3035,123 @@ title_frame.pack(fill="x", padx=20, pady=15)
 tk.Label(title_frame, text="🌅 My Daily Dashboard", 
          font=("Segoe UI", 20, "bold"), bg="#eaf4fc", fg="#222").pack()
 
-# Date and Time frame
-datetime_frame = tk.Frame(title_frame, bg="#eaf4fc")
-datetime_frame.pack(pady=(2, 0))
+# First row: Clocks and Date in same row, same height
+clocks_date_row = tk.Frame(title_frame, bg="#eaf4fc")
+clocks_date_row.pack(pady=(5, 5))
 
-# Date label with larger font
-date_label = tk.Label(datetime_frame, text="", font=("Segoe UI", 12), 
+# Left side clocks: US, UK, Japan
+left_clocks_frame = tk.Frame(clocks_date_row, bg="#eaf4fc")
+left_clocks_frame.pack(side="left", padx=(0, 15))
+
+clock_us = AnalogClock(left_clocks_frame, "US", "America/New_York", size=90)
+clock_us.pack(side="left", padx=5)
+
+clock_uk = AnalogClock(left_clocks_frame, "UK", "Europe/London", size=90)
+clock_uk.pack(side="left", padx=5)
+
+clock_japan = AnalogClock(left_clocks_frame, "Japan", "Asia/Tokyo", size=90)
+clock_japan.pack(side="left", padx=5)
+
+# Date and Time in the middle (time below date)
+datetime_middle_frame = tk.Frame(clocks_date_row, bg="#eaf4fc")
+datetime_middle_frame.pack(side="left", padx=20, expand=True)
+
+# Date label
+date_label = tk.Label(datetime_middle_frame, text="", font=("Segoe UI", 14, "bold"), 
                       bg="#eaf4fc", fg="#555")
 date_label.pack()
 
-# Time label with larger font and special styling
-time_label = tk.Label(datetime_frame, text="", font=("Segoe UI", 16, "bold"), 
+# Time label (below date)
+time_label = tk.Label(datetime_middle_frame, text="", font=("Segoe UI", 18, "bold"), 
                       bg="#eaf4fc", fg="#007bff")
 time_label.pack()
 
-# AM/PM label
-ampm_label = tk.Label(datetime_frame, text="", font=("Segoe UI", 12, "bold"), 
-                      bg="#eaf4fc", fg="#28a745")
-ampm_label.pack(pady=(0, 5))
+# Timezone label (below time) - shows which timezone is displayed
+timezone_label = tk.Label(datetime_middle_frame, text="Bangladesh Time", 
+                         font=("Segoe UI", 10), bg="#eaf4fc", fg="#666")
+timezone_label.pack()
+
+# Right side clocks: Bangladesh, India, Singapore
+right_clocks_frame = tk.Frame(clocks_date_row, bg="#eaf4fc")
+right_clocks_frame.pack(side="right", padx=(15, 0))
+
+clock_bd = AnalogClock(right_clocks_frame, "Bangladesh", "Asia/Dhaka", size=90)
+clock_bd.pack(side="left", padx=5)
+
+clock_india = AnalogClock(right_clocks_frame, "India", "Asia/Kolkata", size=90)
+clock_india.pack(side="left", padx=5)
+
+clock_singapore = AnalogClock(right_clocks_frame, "Singapore", "Asia/Singapore", size=90)
+clock_singapore.pack(side="left", padx=5)
+
+# Function to update individual clock visibility based on settings
+def update_clocks_visibility():
+    # Update left clocks
+    if bool(settings.get("show_clock_us", True)):
+        clock_us.pack(side="left", padx=5)
+    else:
+        clock_us.pack_forget()
+    
+    if bool(settings.get("show_clock_uk", True)):
+        clock_uk.pack(side="left", padx=5)
+    else:
+        clock_uk.pack_forget()
+    
+    if bool(settings.get("show_clock_japan", True)):
+        clock_japan.pack(side="left", padx=5)
+    else:
+        clock_japan.pack_forget()
+    
+    # Update right clocks
+    if bool(settings.get("show_clock_bangladesh", True)):
+        clock_bd.pack(side="left", padx=5)
+    else:
+        clock_bd.pack_forget()
+    
+    if bool(settings.get("show_clock_india", True)):
+        clock_india.pack(side="left", padx=5)
+    else:
+        clock_india.pack_forget()
+    
+    if bool(settings.get("show_clock_singapore", True)):
+        clock_singapore.pack(side="left", padx=5)
+    else:
+        clock_singapore.pack_forget()
+    
+    # Show/hide the entire clocks row if at least one clock is visible
+    any_visible = (bool(settings.get("show_clock_us", True)) or 
+                  bool(settings.get("show_clock_uk", True)) or 
+                  bool(settings.get("show_clock_japan", True)) or 
+                  bool(settings.get("show_clock_bangladesh", True)) or 
+                  bool(settings.get("show_clock_india", True)) or 
+                  bool(settings.get("show_clock_singapore", True)))
+    
+    if any_visible:
+        clocks_date_row.pack(pady=(5, 5))
+    else:
+        clocks_date_row.pack_forget()
+
+# Initialize clock visibility
+update_clocks_visibility()
+
+# Function to update date/time display visibility
+def update_datetime_visibility():
+    """Show/hide the date and time display based on settings."""
+    try:
+        show_dt = bool(settings.get("show_datetime", True))
+        if show_dt:
+            date_label.pack()
+            time_label.pack()
+            timezone_label.pack()
+        else:
+            date_label.pack_forget()
+            time_label.pack_forget()
+            timezone_label.pack_forget()
+    except Exception:
+        pass
+
+# Initialize date/time visibility
+update_datetime_visibility()
 
 def update_datetime():
     # Get Bangladesh time
@@ -2276,6 +3314,29 @@ todo_tree.configure(yscrollcommand=todo_tree_scroll.set)
 todo_tree_scroll.pack(side="right", fill="y")
 todo_tree.pack(side="left", fill="both", expand=True)
 
+# Ensure row highlight disappears when focus moves away from the to-do list
+def _todo_tree_on_focus_out(event):
+    """
+    When the Treeview loses focus (user clicks somewhere else),
+    clear the visual selection so the highlight background disappears.
+    """
+    try:
+        sel = todo_tree.selection()
+        if sel:
+            todo_tree.selection_remove(sel)
+    except Exception:
+        pass
+
+def _todo_tree_on_focus_in(event):
+    """
+    Placeholder for future focus-in styling if needed.
+    Currently does nothing but kept for symmetry / easy extension.
+    """
+    return
+
+todo_tree.bind("<FocusOut>", _todo_tree_on_focus_out)
+todo_tree.bind("<FocusIn>", _todo_tree_on_focus_in)
+
 todo_tree.bind("<Double-Button-1>", lambda e: toggle_task())
 todo_tree.bind("<KeyPress-Return>", on_todo_key)
 todo_tree.bind("<KeyPress-Delete>", on_todo_key)
@@ -2296,6 +3357,8 @@ def edit_selected_task():
     
     # Create edit window
     edit_window = tk.Toplevel(root)
+    # Create hidden first to avoid visible "jump" animation, then center and show
+    edit_window.withdraw()
     edit_window.title("Edit Task - Detailed")
     edit_window.config(bg="#f5f7fa")
     edit_window.resizable(False, False)
@@ -2305,6 +3368,7 @@ def edit_selected_task():
     
     # Center window relative to main window - make it bigger and taller
     center_window_relative_to_parent(edit_window, 750, 1000)
+    edit_window.deiconify()
     
     # Make modal
     edit_window.transient(root)
@@ -2806,6 +3870,21 @@ start_timer_updates()
 # Start optional auto-sync loop
 root.after(2000, schedule_auto_sync)
 
+# Start auto-archive check (every 5 minutes)
+def check_and_archive():
+    """Periodically check and archive completed tasks."""
+    try:
+        archived_count = archive_completed_tasks()
+        if archived_count > 0:
+            print(f"Archived {archived_count} task(s)")
+    except Exception as e:
+        print(f"Archive check error: {e}")
+    # Check every 5 minutes (300000 ms)
+    root.after(300000, check_and_archive)
+
+# Start archive check after 10 seconds (to let UI load first)
+root.after(10000, check_and_archive)
+
 # Developer credit in footer
 footer_frame = tk.Frame(scrollable_frame, bg="#eaf4fc")
 footer_frame.pack(fill="x", pady=(0, 10))
@@ -2854,9 +3933,12 @@ def play_sound_background():
                     except Exception as e:
                         print(f"Test: Start command failed: {e}")
                         try:
-                            # Method 3: Fallback to system sound
-                            winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
-                            print("Test: Sound should have played using winsound")
+                            # Method 3: Fallback to system sound (Windows only)
+                            if winsound:
+                                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+                                print("Test: Sound should have played using winsound")
+                            else:
+                                print("Test: winsound not available on this platform")
                         except Exception as e:
                             print(f"Test: Winsound failed: {e}")
                             pass

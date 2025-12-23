@@ -1,359 +1,274 @@
-# Daily Dashboard - Advanced Task Management Application
+# Daily Dashboard - Advanced Task Management Suite
 
-A comprehensive daily dashboard application built with Python and Tkinter for managing tasks, notes, and useful links with timer functionality, deadline tracking, and cloud sync capabilities.
-
-<img width="1297" height="1010" alt="Image" src="https://github.com/user-attachments/assets/d3a1e4e2-50d3-4c81-ab4a-4b7486c149af" />
+A comprehensive cross-platform Python application for daily task management with integrated tools for MySQL backups, FTP/SFTP file management, media downloading, and advanced shell access.
 
 ## 🚀 Features
 
-### 📋 Task Management
-- **To-Do List**: Create, edit, and manage tasks with checkboxes
-- **Detailed Task Editor**: Comprehensive editing window with:
-  - Multi-line task description editor
-  - Task completion status toggle
-  - Created date editing
-  - Deadline management with date/time picker
-  - Completion timestamp display
-- **Deadline Tracking**: Set deadlines with 12-hour format (AM/PM)
-- **Timer Display**: Real-time countdown showing time remaining
-- **Search Functionality**: Quick search to find tasks by name, deadline, or created date
-- **Visual Alerts**: Color-coded tasks based on urgency
-  - 🔴 Red: Overdue or <2 hours left
-  - 🟠 Orange: <6 hours left
-  - 🔵 Blue: Same day
-  - ⚫ Black: Future days
-- **Blinking Effect**: Overdue tasks blink to draw attention
-- **Sound Notifications**: MP3 sound plays when tasks become overdue
-- **Table View**: Organized display with columns for Status, Task, Created Date, Deadline, and Time Left
+### 📋 Core Dashboard Features
+- **Task Management**: Create, edit, delete, and manage tasks with deadlines and timers
+- **Task Archive**: Automatic archiving of completed tasks after configurable time threshold
+- **Notes**: Create and manage detailed notes with rich text editing
+- **Useful Links**: Quick access to frequently used URLs
+- **Deadline Tracking**: Real-time countdown with visual alerts and sound notifications
+- **Search**: Quick search functionality for tasks
+- **Cloud Sync**: Optional HTTP, FTP, or S3 synchronization for task database
+- **Analog Clocks**: Display up to 6 timezone clocks (US, UK, Japan, Bangladesh, India, Singapore)
+- **Date/Time Display**: Main date and time display with timezone label (configurable visibility)
+- **Settings**: Comprehensive settings for theme, sync, clock visibility, and archive threshold
 
-### 🔗 Useful Links
-- **Link Management**: Add, edit, and organize frequently used URLs
-- **Quick Access**: Right-click to open links directly
-- **Reordering**: Move links up/down to organize by priority
-- **Modern GUI**: Clean interface with improved input validation
+### 🛠️ Integrated Tools
 
-### 📝 Notes
-- **Note Taking**: Create and manage detailed notes
-- **Edit Notes**: Full-featured note editor with:
-  - Title editing
-  - Multi-line content editor with scrollbar
-  - Proper height adjustment to prevent content cutoff
-- **Rich Content**: Support for multi-line text
-- **Organization**: Reorder notes by importance
-- **Quick View**: Double-click to view full note content
-- **Context Menu**: Right-click to edit or delete notes
+#### MySQL Backup Tool
+- GUI-based MySQL database backup management
+- Save and manage multiple connection presets
+- Backup history tracking
+- Secure credential storage with SQLite (`settings.db`)
+- **Remote Backup Options**: HTTP, FTP, S3, or Google Drive (OAuth2)
+- Automatic credential persistence and auto-load on startup
+- Cross-platform support (Linux/Windows/Mac)
 
-### ☁️ Cloud Sync (Optional)
-- **Multiple Sync Methods**:
-  - **HTTP Sync**: Sync with custom server (original method)
-  - **FTP Sync**: Sync via FTP server
-  - **S3 Sync**: Sync with Amazon S3 or S3-compatible storage
-- **Auto-Sync**: Automatic synchronization at configurable intervals
-- **Manual Sync**: Trigger sync on demand
-- **Conflict Resolution**: Choose how to handle sync conflicts (prefer local, prefer server, or prefer newer)
+#### FTP/FTPS/SFTP Client
+- Full-featured file transfer client similar to FileZilla
+- Support for FTP, FTPS (TLS), and SFTP protocols
+- **Advanced Features**:
+  - File upload, download, delete, rename
+  - Directory creation and navigation
+  - File/folder permissions editing (chmod)
+  - File properties viewer (size, dates, permissions)
+  - Multi-select operations
+  - Transfer queue with progress tracking
+  - Connection profiles with saved credentials
+  - Local and remote file browsing
+  - Recursive directory deletion
+- Cross-platform support (Linux/Windows/Mac)
 
-### 🎨 User Interface
-- **Modern Design**: Clean and responsive interface
-- **Improved Font Sizes**: Larger, more readable fonts (13px) for all content sections
-- **Responsive Layout**: Adapts to different screen sizes
-- **Icon Support**: Application icon on all windows
-- **Centered Windows**: All popup windows open centered relative to main window
-- **Scrollable Content**: Proper scrolling for long content
-- **Keyboard Shortcuts**: 
-  - Enter: Add new task/link/note
-  - Space: Toggle task completion
-  - Delete: Remove selected item
-  - Up/Down arrows: Navigate items
-  - Ctrl+Enter: Save in edit windows
-  - Escape: Cancel/close windows
+#### Media Downloader
+- Download videos and audio from various platforms
+- Support for playlists and single media files
+- Quality settings (video: best, 1080p, 720p, 480p, 360p)
+- Audio quality options (320, 256, 192, 128, 96 kbps)
+- Format selection (MP4, WebM, MKV)
+- Auto-detection of clipboard URLs
+- System tray integration
+- Auto-start with Windows/Linux
+- Cross-platform support (Linux/Windows/Mac)
+
+#### Advanced Shell (Shell Yamin)
+- Powerful GUI shell with admin/root capabilities
+- Cross-platform command execution (Linux/Windows/Mac)
+- Privilege elevation support (sudo/pkexec on Linux, UAC on Windows, osascript on Mac)
+- Command history
+- Current directory management
+- Built-in commands
+- Dark theme interface
 
 ## 📦 Installation
 
 ### Prerequisites
 - Python 3.12 or higher
-- Windows 10/11 or Linux (for sound notifications on Windows)
+- Linux, Windows, or macOS
 
 ### Quick Start
-1. **Clone or download** the project files
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Run the application**:
-   ```bash
-   python task.py
-   ```
-
-## 🛠️ Building Executable
-
-The build script automatically detects your operating system and creates the appropriate build:
-
-### Windows
 ```bash
-python build.py
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python task.py
 ```
-**Output**: `build/task.exe` (or similar executable name)
 
-### Linux
-```bash
-python build.py
-```
-**Output**: `build/DailyDashboard.AppImage`
+### Platform-Specific Notes
 
-### Build Requirements
-- Python 3.12+ (recommended: Python 3.12 for Windows builds)
-- Internet connection (for downloading compilers and dependencies)
-- 2-5 GB free disk space
-- For Linux: `patchelf` (automatically installed if needed)
+#### Windows
+- All GUIs run without console windows
+- Taskbar icons properly configured
+- Auto-start support via Windows Registry
 
-**Note for Python 3.13+ on Windows:**
-- Python 3.13+ requires MSVC compiler (MinGW64 is not supported)
-- The build script automatically uses `--msvc=latest` for Python 3.13+
-- MSVC will be downloaded automatically by Nuitka if not available
-- For best compatibility, Python 3.12 is recommended for Windows builds
+#### Linux
+- Auto-start via `.desktop` file in `~/.config/autostart/`
+- FFmpeg installation via package manager (Ubuntu: `sudo apt-get install ffmpeg`)
+- Proper icon support via Pillow fallback
 
-All builds are created in the `build/` directory in the project root.
+#### macOS
+- Auto-start not yet implemented (can be added)
+- FFmpeg installation via Homebrew (`brew install ffmpeg`)
 
 ## 📁 Project Structure
 
 ```
-to-do-main/
-├── task.py              # Main application
-├── build.py             # Build script for Windows/Linux executables
-├── sync_server.py       # Optional HTTP sync server
-├── requirements.txt     # Python dependencies
-├── README.md           # This file
-├── LICENSE             # License file
-├── icon.ico            # Application icon
-├── assets/             # Sound files and assets
-│   └── overdue.mp3     # Overdue notification sound
-├── database/           # SQLite database (portable mode)
-└── build/              # Build output directory
-    ├── task.exe        # Windows executable (after build)
-    └── DailyDashboard.AppImage  # Linux AppImage (after build)
+to-do/
+├── task.py                    # Main dashboard application
+├── icon.ico                   # Application icon
+├── icon_utils.py             # Centralized icon management
+├── settings_db.py            # Shared settings database utilities
+├── sync_server.py            # Optional sync server
+├── requirements.txt          # Python dependencies
+├── settings.db               # Shared credentials/settings database
+├── ftp_client/               # FTP/FTPS/SFTP client
+│   ├── ftp_client_gui.py    # Main FTP client GUI
+│   └── ftp_client_gui_enhanced.py  # Enhanced version
+├── media_downloader/         # Media downloader
+│   ├── media-download.py    # Main media downloader GUI
+│   └── requirements.txt     # Media downloader dependencies
+├── mysql_client/             # MySQL backup tool
+│   └── mysql_backup_gui.py  # MySQL backup GUI
+└── shell_yamin/              # Advanced shell
+    ├── shell_gui.py         # Shell GUI
+    └── README.md            # Shell documentation
 ```
 
-## 🎯 Usage Guide
+## 🎯 Usage
 
-### Adding Tasks
-1. Type task description in the input field
-2. Press Enter or click "Add Task"
-3. **Set Deadline**: Right-click task → "Set Timer..." or click "⏰ Add Timer" button
-4. Choose date and time using the time picker or quick time buttons
-5. Task will appear with countdown timer
+### Main Dashboard
 
-### Editing Tasks
-1. Right-click on a task → "Edit Task..."
-2. Use the comprehensive editor to:
-   - Edit task description (multi-line supported)
-   - Toggle completion status
-   - Modify created date
-   - Update deadline with date/time picker
-   - Clear deadline if needed
-3. Click "Save Changes" or press Ctrl+Enter
+#### Task Management
+- **Add Task**: Type in the input field and press Enter
+- **Set Deadline**: Right-click task → "Set Timer..." or click "⏰ Add Timer"
+- **Edit Task**: Right-click → "Edit Task..." for comprehensive editing
+- **Toggle Done**: Double-click task or press Space
+- **Delete Task**: Select task and press Delete or right-click → "Delete Task"
+- **Search**: Type in search box and press Enter to find tasks
+- **Archive**: View archived tasks via **Archive → View Archive...**
 
-### Managing Links
-1. Click "➕ Add New Link" button
-2. Enter name and URL (https:// is added automatically if missing)
-3. Links appear in the Useful Links section
-4. Right-click to open or delete
+#### Notes & Links
+- **Add Note**: Click "➕ Add New Note" button
+- **Edit Note**: Right-click note → "Edit"
+- **Add Link**: Click "➕ Add New Link" button
+- **Open Link**: Double-click link in list
 
-### Creating and Editing Notes
-1. **Create**: Click "➕ Add New Note" button
-2. **Edit**: Right-click on note → "Edit" or click "Edit Note" in view window
-3. Enter/edit title and content
-4. Notes are saved automatically
-5. Double-click to view full note
+#### Settings
+- **Access**: Tools → Settings
+- **Theme**: Light/Dark mode
+- **Analog Clocks**: Show/hide individual timezone clocks
+- **Date/Time Display**: Show/hide main date and time
+- **Cloud Sync**: Configure HTTP, FTP, or S3 synchronization
+- **Archive Threshold**: Set hours before completed tasks are auto-archived
 
-### Searching Tasks
-1. Type in the search box in the To-Do List section
-2. Press Enter to find next matching task
-3. Search matches task name, deadline, and created date
+### Integrated Tools
 
-### Timer Features
-- **12-Hour Format**: AM/PM time selection
-- **Time Picker**: Visual time picker with hour/minute spinboxes
-- **Quick Times**: Predefined time buttons (9 AM, 12 PM, 3 PM, 6 PM)
-- **Real-time Updates**: Timer updates every second
-- **Sound Alerts**: MP3 plays when task becomes overdue
+Access via **Tools** menu:
+- **MySQL Backup Tool**: Database backup management
+- **FTP/FTPS/SFTP Client**: File transfer and management
+- **Media Downloader**: Download videos and audio
+- **Advanced Shell**: GUI shell with admin access
 
 ## 🔧 Configuration
 
 ### Database
-- SQLite database is stored in **%APPDATA%\\DailyDashboard\\database\\sweethart.db** by default (Windows)
-- For **portable mode**, create an empty file named `portable.txt` next to `task.py` to store DB in `./database/sweethart.db`
-- Data persists between application sessions
-- No manual configuration required
+- **Main dashboard DB file**: **`taskmask.db`** (used by all dashboard features)
+  - Default location (Windows): `%APPDATA%\DailyDashboard\database\taskmask.db`
+  - Default location (Linux/Mac): `~/.config/DailyDashboard/database/taskmask.db`
+  - Portable mode: Create `portable.txt` next to `task.py` to use `./database/taskmask.db`
+- **Shared credentials/settings DB file**: **`settings.db`** (stored in project root)
+  - Contains: saved MySQL connections, FTP connection profiles, backup locations, backup history, OAuth2 tokens, archive settings, clock visibility settings, and other shared credential/history settings
 
-### Server Sync (Optional)
+### Cloud Sync (Optional)
+Configure in **Tools → Settings**:
+- **HTTP Sync**: Custom server synchronization
+- **FTP Sync**: FTP server synchronization
+- **S3 Sync**: Amazon S3 or S3-compatible storage
 
-#### HTTP Sync
-1. Run the sync server:
-   ```bash
-   python sync_server.py --port 8765 --token "YOUR_TOKEN"
-   ```
-2. In the app: `Tools → Settings…` then:
-   - Select "HTTP" as sync type
-   - Enable **Server Sync**
-   - Set Server URL: `http://<server-ip>:8765`
-   - Set User: any name (e.g. `yamin`)
-   - Set Token: must match the server `--token`
-   - Set Interval: auto-sync frequency (seconds)
+### MySQL Backup Remote Storage
+Configure in **MySQL Backup Tool → Step 3 — Remote Backup**:
+- **HTTP**: Upload backup archives to custom HTTP endpoint
+- **FTP**: Upload to FTP server
+- **S3**: Upload to Amazon S3 or S3-compatible storage
+- **Google Drive**: Upload to your personal Google Drive using OAuth2
 
-#### FTP Sync
-1. In the app: `Tools → Settings…` then:
-   - Select "FTP" as sync type
-   - Enable **Server Sync**
-   - Enter FTP Host, Port (default: 21), Username, Password
-   - Set Remote Path (default: `/`)
-   - Set Interval: auto-sync frequency (seconds)
+#### Google Drive Setup (OAuth2)
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create or select a project
+3. Enable **Google Drive API**
+4. Go to **Credentials** → **Create Credentials** → **OAuth client ID**
+5. Choose **Desktop app** as application type
+6. Download the JSON file and save it as `client_secrets.json` in the `mysql_client/` folder
+7. In the MySQL Backup Tool, click **"🔐 Authorize Google Drive"** to complete OAuth2 flow
 
-#### S3 Sync
-1. In the app: `Tools → Settings…` then:
-   - Select "S3" as sync type
-   - Enable **Server Sync**
-   - Enter S3 Bucket name
-   - Set S3 Key (filename, default: `sweethart.db`)
-   - Set S3 Region (default: `us-east-1`)
-   - Enter Access Key ID and Secret Access Key
-   - Set Interval: auto-sync frequency (seconds)
+### FTP Client
+- **Connection Profiles**: Save FTP/FTPS/SFTP connection credentials
+- **Auto-connect**: Load saved connections on startup
+- **Credentials Storage**: All credentials stored securely in `settings.db`
 
-**Note**: You can also trigger manual sync: `Tools → Sync Now`
-
-### Sound Notifications
-- Place MP3 files in `assets/` directory
-- Default sound: `assets/overdue.mp3`
-- Test sound button available in application
-
-### Timezone
-- Application uses Asia/Dhaka timezone
-- Current time displayed in main window
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Build Fails with Compiler Error (Windows)**
-
-**Error: "No tool module 'ilink' found" or MSVC errors**
-- This error occurs when MSVC (Visual Studio Build Tools) is not properly installed
-- **Solution 1 (Recommended)**: Install Visual Studio Build Tools 2022
-  - Download: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
-  - Install "Build Tools for Visual Studio 2022"
-  - During installation, select **"Desktop development with C++"** workload
-  - Restart your terminal/command prompt after installation
-  - Run `python build.py` again
-
-- **Solution 2 (Easiest)**: Use Python 3.12 instead
-  - Python 3.12 works with MinGW64 (automatically downloaded by Nuitka)
-  - No additional tools required
-  - Download Python 3.12: https://www.python.org/downloads/
-  - Recommended for easier builds
-
-- **Solution 3**: Update Nuitka to latest version
-  ```bash
-  pip install --upgrade nuitka
-  ```
-
-**General Compiler Notes:**
-- **Python 3.13+**: Requires MSVC compiler (`--msvc=latest`)
-  - MSVC will be downloaded automatically by Nuitka if available
-  - First build may take longer while MSVC downloads
-- **Python 3.12 and earlier**: Uses MinGW64 compiler (`--mingw64`)
-  - Nuitka will automatically download MinGW64
-  - No additional installation required
-
-**Build Fails on Linux**
-- Ensure `patchelf` is installed: `sudo apt-get install patchelf` (Debian/Ubuntu)
-- Or: `sudo yum install patchelf` (RHEL/CentOS)
-- The build script will attempt to install it automatically
-
-**Sound Not Playing**
-- Check if `assets/overdue.mp3` exists
-- Try the "🔊 Test Sound" button
-- Ensure system volume is not muted
-- On Linux, ensure audio system is properly configured
-
-**Python Version Error**
-- Ensure Python 3.12+ is installed
-- Check with: `python --version` or `python3 --version`
-
-**Database Issues**
-- Delete database file to reset
-- Windows: `%APPDATA%\DailyDashboard\database\sweethart.db`
-- Portable mode: `./database/sweethart.db`
-- Application will recreate database automatically
-
-**Sync Issues**
-- Check network connectivity
-- Verify server credentials (FTP/S3)
-- Ensure server is running (HTTP sync)
-- Check firewall settings
-- Review sync error messages in status bar
-
-**S3 Sync Requires boto3**
-- Install: `pip install boto3`
-- Or run: `pip install -r requirements.txt`
+### Media Downloader
+- **Output Directories**: 
+  - Windows: `%USERPROFILE%\Downloads\Yamin Downloader\`
+  - Linux/Mac: `~/Downloads/Yamin Downloader/`
+- **FFmpeg**: Auto-downloads on Windows, manual installation required on Linux/Mac
+- **Auto-start**: Enable in File menu
 
 ## 📋 Dependencies
 
-### Runtime Dependencies
+See `requirements.txt` for complete list. Key dependencies:
+
+### Core
 - `pytz>=2024.1` - Timezone handling
 - `playsound==1.2.2` - Sound playback
-- `boto3>=1.28.0` - AWS S3 sync support (optional, for S3 sync)
 
-### Build Dependencies (Optional)
-- `nuitka>=2.0` - Python to executable compiler
-- `zstandard>=0.21.0` - Compression
-- `ordered-set>=4.1.0` - Optimization
-- `clang>=16.0.0` - C compilation (Linux)
-- `patchelf` - ELF patching (Linux, for AppImage)
+### Cloud Sync
+- `boto3>=1.28.0` - S3 sync support (dashboard sync + MySQL backup)
 
-### Standard Library
-- `tkinter` - GUI framework
-- `sqlite3` - Database
-- `datetime` - Date/time handling
-- `threading` - Background tasks
-- `subprocess` - System commands
-- `webbrowser` - URL opening
-- `winsound` - Windows sound (Windows only)
-- `ftplib` - FTP client (built-in)
-- `urllib` - HTTP client (built-in)
-- `hashlib` - File hashing (built-in)
+### MySQL Backup
+- `google-api-python-client>=2.100.0` - Google Drive API
+- `google-auth>=2.23.0` - Google authentication (OAuth2)
+- `google-auth-httplib2>=0.1.1` - OAuth2 HTTP support
+- `google-auth-oauthlib>=1.1.0` - OAuth2 flow support
 
-## 🤝 Contributing
+### FTP Client
+- `paramiko>=3.0.0` - SFTP support (optional, required for SFTP protocol)
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly on both Windows and Linux
-5. Submit a pull request
+### Media Downloader
+- `yt-dlp>=2025.3.31` - Media download engine
+- `pyperclip>=1.8.2` - Clipboard operations
+- `pystray>=0.19.4` - System tray icon
+- `validators>=0.22.0` - URL validation
+- `requests>=2.31.0` - HTTP requests
+- `certifi>=2023.7.22` - SSL certificates
+
+### Cross-Platform Support
+- `Pillow>=10.0.0` - Image processing and icon support
+- `pywin32>=306` - Windows API integration (Windows only, optional)
+
+## 🆕 Recent Updates
+
+- ✨ **Task Archive System**: Automatic archiving of completed tasks with configurable threshold
+- ✨ **Analog Clocks**: 6 timezone clocks with individual show/hide settings
+- ✨ **Date/Time Display**: Main date and time display with timezone label and visibility control
+- ✨ **FTP/FTPS/SFTP Client**: Full-featured file transfer client with advanced features
+- ✨ **Media Downloader**: Cross-platform media downloader with quality settings
+- ✨ **Advanced Shell**: GUI shell with admin/root capabilities
+- ✨ **Cross-Platform Support**: Full compatibility with Linux, Windows, and macOS
+- ✨ **Console Window Hiding**: All GUIs run without console windows
+- ✨ **Shared Settings Database**: Centralized credential and settings storage
+- ✨ **MySQL Backup Remote Storage**: HTTP, FTP, S3, and Google Drive (OAuth2) support
+- ✨ **Auto-Save Credentials**: All tools automatically remember connection settings
+- ✨ **Improved Error Handling**: Better error messages and fallback mechanisms
+
+## 🐛 Troubleshooting
+
+**Import Errors**: Ensure all dependencies are installed: `pip install -r requirements.txt`
+
+**Icon Not Loading**: Icon file should be in project root as `icon.ico`
+
+**Console Windows Appearing**: On Windows, ensure `pywin32` is installed. Console windows are automatically hidden.
+
+**FFmpeg Not Found (Media Downloader)**:
+- Windows: Auto-downloads on first use
+- Linux: Install via package manager (`sudo apt-get install ffmpeg`)
+- macOS: Install via Homebrew (`brew install ffmpeg`)
+
+**Database Issues**: Delete database file to reset (location shown in status bar)
+
+**FTP Connection Issues**: Check firewall settings and ensure correct port numbers
+
+**Media Downloader Not Opening**: Check that all dependencies are installed, especially `yt-dlp`
 
 ## 📄 License
 
-This project is open source and available under the MIT License.
-
-## 🆘 Support
-
-For issues or questions:
-1. Check the troubleshooting section
-2. Review the error messages
-3. Ensure all dependencies are installed
-4. Try running with Python 3.12+
-5. Check the build output for detailed error messages
-
-## 🎉 Recent Updates
-
-- ✨ Added FTP and S3 sync support
-- ✨ Enhanced task editing with comprehensive GUI
-- ✨ Added note editing functionality
-- ✨ Improved font sizes for better readability
-- ✨ Added search functionality for tasks
-- ✨ Better column widths for To-Do list
-- ✨ Cross-platform build support (Windows .exe and Linux AppImage)
-- ✨ Improved UI responsiveness and layout
-- ✨ Better window centering and scrollability
+MIT License - See LICENSE file for details
 
 ---
 
-**Made with ❤️ for productive daily management**
+**Made with ❤️ for productive daily management and automation**
+
+**Developer**: Md. Yamin Hossain  
+**GitHub**: [https://github.com/needyamin](https://github.com/needyamin)

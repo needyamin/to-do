@@ -5,6 +5,12 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+# Centralized logging
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from logging_config import get_logger
+logger = get_logger(__name__)
+
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()

@@ -1,25 +1,81 @@
-# Runtime Dependencies
-# These are required for the application to run
-pytz>=2024.1
-playsound==1.2.2
+# ============================================
+# Daily Dashboard - Requirements
+# ============================================
+# Core project dependencies for task.py and integrated tools
+# Supports: Linux, Windows, macOS
+# ============================================
+
+# ============================================
+# Core Dashboard (task.py)
+# ============================================
+pytz>=2024.1                    # Timezone handling for analog clocks and date/time display
+playsound==1.2.2                # Sound playback for deadline alerts
+
+# ============================================
+# Cloud Sync Support
+# ============================================
+# Optional: S3 sync support (dashboard sync + MySQL backup)
 boto3>=1.28.0
 
-# Build Dependencies (optional; only needed to create executables via Nuitka)
-# Install these only if you want to build .exe (Windows) or AppImage (Linux)
-nuitka>=2.0
-zstandard>=0.21.0
-ordered-set>=4.1.0
+# ============================================
+# MySQL Backup Tool
+# ============================================
+# Optional: Google Drive OAuth2 support (mysql_backup_gui.py)
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
 
-# Platform-specific build dependencies
-# Windows: MinGW64 is downloaded automatically by Nuitka
-# Linux: clang and patchelf may be needed
-# clang>=16.0.0  # Uncomment if needed on Linux
-# patchelf  # Uncomment if needed on Linux (install via system package manager: apt-get/yum)
+# ============================================
+# FTP/FTPS/SFTP Client
+# ============================================
+# Optional: SFTP support (required for SFTP protocol)
+paramiko>=3.0.0
 
-# Notes:
-# - boto3 is optional but recommended if you plan to use S3 sync
-# - For Linux builds, you may need to install patchelf via system package manager:
-#   Debian/Ubuntu: sudo apt-get install patchelf
-#   RHEL/CentOS: sudo yum install patchelf
-# - For Windows builds, MinGW64 is automatically downloaded by Nuitka
-# - All other dependencies (tkinter, sqlite3, ftplib, etc.) are part of Python standard library
+# ============================================
+# Media Downloader
+# ============================================
+yt-dlp>=2025.3.31               # Media download engine
+pyperclip>=1.8.2                # Clipboard operations for auto-detecting URLs
+pystray>=0.19.4                 # System tray icon support
+validators>=0.22.0               # URL validation
+requests>=2.31.0                 # HTTP requests for updates and downloads
+certifi>=2023.7.22              # SSL certificates
+
+# ============================================
+# Cross-Platform Support
+# ============================================
+Pillow>=10.0.0                  # Image processing and icon support (Linux fallback)
+
+# ============================================
+# Windows-Specific (Optional)
+# ============================================
+# Only required on Windows for system tray and Windows API features
+# Install separately: pip install pywin32
+# pywin32>=306                  # Windows API integration (uncomment if on Windows)
+
+# ============================================
+# Build Dependencies (Optional)
+# ============================================
+# Required only for building executables with Nuitka
+# nuitka>=2.0
+# zstandard>=0.21.0
+# ordered-set>=4.1.0
+
+# ============================================
+# Installation Notes
+# ============================================
+# 1. Install all dependencies:
+#    pip install -r requirements.txt
+#
+# 2. On Windows, optionally install pywin32 for better integration:
+#    pip install pywin32
+#
+# 3. For Media Downloader, FFmpeg is required:
+#    - Windows: Auto-downloads on first use
+#    - Linux: sudo apt-get install ffmpeg
+#    - macOS: brew install ffmpeg
+#
+# 4. For SFTP support in FTP Client, paramiko is required (already included)
+#
+# 5. For Google Drive in MySQL Backup, Google API packages are required (already included)
