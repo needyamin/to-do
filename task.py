@@ -2460,38 +2460,153 @@ def open_media_downloader():
             )
             return
         
-        # Launch the media downloader in a separate process (no console window)
-        if sys.platform == "win32":
-            # Windows - use CREATE_NO_WINDOW to hide console
-            try:
-                CREATE_NO_WINDOW = 0x08000000
-                subprocess.Popen(
-                    [sys.executable, media_downloader_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=CREATE_NO_WINDOW
-                )
-            except Exception as e:
-                # Fallback if CREATE_NO_WINDOW not available
+        # Quick check for critical dependencies
+        missing_deps = []
+        try:
+            import yt_dlp
+        except ImportError:
+            missing_deps.append("yt-dlp")
+        
+        try:
+            import pyperclip
+        except ImportError:
+            missing_deps.append("pyperclip")
+        
+        try:
+            from PIL import Image
+        except ImportError:
+            missing_deps.append("Pillow")
+        
+        if missing_deps:
+            deps_str = ", ".join(missing_deps)
+            messagebox.showerror(
+                "Missing Dependencies",
+                f"Media Downloader requires the following packages:\n{deps_str}\n\n"
+                f"Please install them using:\npip install {deps_str}"
+            )
+            return
+        
+        # Create temporary file to capture errors
+        import tempfile
+        error_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt')
+        error_file_path = error_file.name
+        error_file.close()
+        
+        # Launch the media downloader in a separate process
+        try:
+            error_file_handle = open(error_file_path, 'w')
+            if sys.platform == "win32":
+                # Windows - use CREATE_NO_WINDOW to hide console, but capture stderr
                 try:
-                    subprocess.Popen(
+                    CREATE_NO_WINDOW = 0x08000000
+                    process = subprocess.Popen(
                         [sys.executable, media_downloader_path],
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=error_file_handle,
+                        creationflags=CREATE_NO_WINDOW
                     )
-                except Exception as e2:
-                    messagebox.showerror("Error", f"Failed to launch Media Downloader:\n{str(e2)}")
-        else:
-            # Linux/Mac - run in background
-            try:
-                subprocess.Popen(
+                except Exception:
+                    # Fallback if CREATE_NO_WINDOW not available
+                    process = subprocess.Popen(
+                        [sys.executable, media_downloader_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=error_file_handle
+                    )
+            else:
+                # Linux/Mac - run in background
+                process = subprocess.Popen(
                     [sys.executable, media_downloader_path],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=error_file_handle,
                     start_new_session=True
                 )
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to launch Media Downloader:\n{str(e)}")
+            
+            # Close error file handle so we can read it later
+            error_file_handle.close()
+            
+            # Wait a moment to see if process starts successfully
+            import time
+            time.sleep(1.0)  # Increased wait time to 1 second
+            
+            # Check if process is still running
+            if process.poll() is not None:
+                # Process exited immediately - there was an error
+                error_msg = "Media Downloader failed to start."
+                try:
+                    if os.path.exists(error_file_path):
+                        with open(error_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            error_content = f.read()
+                            if error_content:
+                                # Show more error details (first 1000 chars)
+                                error_msg += f"\n\nError details:\n{error_content[:1000]}"
+                except Exception as read_err:
+                    error_msg += f"\n\n(Unable to read error details: {read_err})"
+                
+                # Also check return code
+                return_code = process.returncode
+                if return_code:
+                    error_msg += f"\n\nProcess exited with code: {return_code}"
+                
+                # Clean up error file
+                try:
+                    if os.path.exists(error_file_path):
+                        os.unlink(error_file_path)
+                except:
+                    pass
+                
+                messagebox.showerror("Launch Failed", error_msg)
+            else:
+                # Process is running - give it a bit more time to show window
+                # Then check error file for any warnings (non-fatal errors)
+                def check_for_warnings():
+                    try:
+                        time.sleep(2)  # Wait 2 seconds for window to appear
+                        if os.path.exists(error_file_path):
+                            with open(error_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                error_content = f.read()
+                                # Only show if there are actual errors (not just warnings)
+                                if error_content and ('Error' in error_content or 'Traceback' in error_content):
+                                    # Don't show error if process is still running - might be non-fatal
+                                    if process.poll() is not None:
+                                        # Process died after starting
+                                        error_msg = f"Media Downloader encountered an error:\n{error_content[:500]}"
+                                        root.after(0, lambda: messagebox.showerror("Media Downloader Error", error_msg))
+                        # Clean up error file
+                        if os.path.exists(error_file_path):
+                            os.unlink(error_file_path)
+                    except:
+                        pass
+                
+                threading.Thread(target=check_for_warnings, daemon=True).start()
+                
+        except Exception as e:
+            # Close error file handle if still open
+            try:
+                if 'error_file_handle' in locals():
+                    error_file_handle.close()
+            except:
+                pass
+            
+            # Read error file if it exists
+            error_msg = f"Failed to launch Media Downloader:\n{str(e)}"
+            try:
+                if os.path.exists(error_file_path):
+                    with open(error_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        error_content = f.read()
+                        if error_content:
+                            error_msg += f"\n\nError details:\n{error_content[:500]}"
+            except:
+                pass
+            
+            # Clean up error file
+            try:
+                if os.path.exists(error_file_path):
+                    os.unlink(error_file_path)
+            except:
+                pass
+            
+            messagebox.showerror("Error", error_msg)
+            
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()

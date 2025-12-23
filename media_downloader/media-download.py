@@ -622,6 +622,12 @@ root.geometry("800x700")
 root.minsize(600, 500)  # Set minimum window size
 root.configure(bg=THEME['bg'])
 
+# Ensure window is visible immediately
+root.deiconify()
+root.lift()
+root.focus_force()
+root.update()  # Force window to appear
+
 # Quality settings variables
 video_quality_var = tk.StringVar(value='best')
 audio_quality_var = tk.StringVar(value='320')
@@ -808,6 +814,14 @@ def check_updates_on_startup():
     """Check for updates when the application starts"""
     global FORCE_UPDATE_CHECK
     try:
+        # Ensure window is visible before showing any dialogs
+        try:
+            root.deiconify()
+            root.lift()
+            root.focus_force()
+        except:
+            pass
+        
         log("\n=== Update Check Process Started ===")
         print("\n=== UPDATE CHECK PROCESS STARTED ===")
         
@@ -819,6 +833,14 @@ def check_updates_on_startup():
             latest_version = latest_release.get('tag_name', '').lstrip('v')
             log(f"New version {latest_version} available!")
             
+            # Ensure window is visible before showing dialog
+            try:
+                root.deiconify()
+                root.lift()
+                root.focus_force()
+            except:
+                pass
+            
             if messagebox.askyesno("Update Available", 
                                  f"Version {latest_version} is available. Would you like to update now?"):
                 log("User chose to update")
@@ -828,15 +850,29 @@ def check_updates_on_startup():
         else:
             if FORCE_UPDATE_CHECK:
                 # Only show the "no updates" message if the user manually checked
+                # Ensure window is visible
+                try:
+                    root.deiconify()
+                    root.lift()
+                    root.focus_force()
+                except:
+                    pass
                 messagebox.showinfo("No Updates", "You have the latest version.")
             log("No updates available")
         
         # Always update the timestamp
         update_check_timestamp()
             
-        # Check for FFmpeg updates
-        log("Starting FFmpeg update check...")
-        check_ffmpeg_update()
+        # Check for FFmpeg updates (non-blocking)
+        def check_ffmpeg_async():
+            try:
+                log("Starting FFmpeg update check...")
+                check_ffmpeg_update()
+            except Exception as e:
+                log(f"Error checking FFmpeg updates: {e}")
+        
+        # Run FFmpeg check in background thread to avoid blocking
+        threading.Thread(target=check_ffmpeg_async, daemon=True).start()
         
         log("=== Update Check Process Completed ===\n")
         print("=== UPDATE CHECK PROCESS COMPLETED ===\n")
@@ -848,6 +884,12 @@ def check_updates_on_startup():
         
         if FORCE_UPDATE_CHECK:
             # Show error message if user manually checked
+            try:
+                root.deiconify()
+                root.lift()
+                root.focus_force()
+            except:
+                pass
             messagebox.showerror("Update Check Failed", 
                                f"Failed to check for updates: {str(e)}\n\n"
                                "Please check your internet connection.")
@@ -2218,21 +2260,46 @@ root.after(100, process_queue)
 # Main loop
 if __name__ == "__main__":
     try:
-        # Check for updates on startup
-        check_updates_on_startup()
-        
-        # Show the window by default
+        # Ensure window is visible before doing anything else
         root.deiconify()
         root.lift()
         root.focus_force()
+        root.update_idletasks()  # Process pending window updates
+        root.update()  # Force window to appear immediately
         
         # Create tray icon but don't start minimized
         if tray_icon is None:
             create_tray_icon()
         
+        # Check for updates on startup (non-blocking, after window is shown)
+        def check_updates_async():
+            try:
+                # Small delay to ensure window is fully visible first
+                root.after(500, check_updates_on_startup)
+            except Exception as e:
+                log(f"Error scheduling update check: {e}")
+        
+        check_updates_async()
+        
+        # Show the window again to ensure it's on top
+        root.deiconify()
+        root.lift()
+        root.focus_force()
+        
         root.mainloop()
     except KeyboardInterrupt:
         sys.exit(0)
+    except Exception as e:
+        # Show error in a messagebox if window creation fails
+        try:
+            import traceback
+            error_msg = f"Failed to start Media Downloader:\n{str(e)}\n\n{traceback.format_exc()}"
+            messagebox.showerror("Startup Error", error_msg)
+        except:
+            print(f"Critical error: {e}")
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
     finally:
         # Clean up tray icon when exiting
         if tray_icon is not None:
