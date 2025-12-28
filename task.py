@@ -3029,14 +3029,22 @@ class AnalogClock(tk.Canvas):
                         self.center_x + self.radius, self.center_y + self.radius,
                         outline="#333", width=2, fill="white")
         
-        # Draw hour markers
+        # Draw hour numbers (1, 2, 3, ... 12) instead of markers
         for i in range(12):
-            angle = math.radians(i * 30 - 90)
-            x1 = self.center_x + (self.radius - 8) * math.cos(angle)
-            y1 = self.center_y + (self.radius - 8) * math.sin(angle)
-            x2 = self.center_x + self.radius * math.cos(angle)
-            y2 = self.center_y + self.radius * math.sin(angle)
-            self.create_line(x1, y1, x2, y2, fill="#333", width=2)
+            # Calculate position for each hour number
+            # i=0 is 12 o'clock (top), i=1 is 1 o'clock, etc.
+            hour_number = 12 if i == 0 else i
+            angle = math.radians(i * 30 - 90)  # -90 to start at top (12 o'clock)
+            
+            # Position numbers slightly inside the clock face
+            distance_from_center = self.radius - 15
+            x = self.center_x + distance_from_center * math.cos(angle)
+            y = self.center_y + distance_from_center * math.sin(angle)
+            
+            # Draw the number
+            self.create_text(x, y, text=str(hour_number), 
+                           font=("Segoe UI", 10, "bold"), 
+                           fill="#333", anchor="center")
         
         # Draw center dot
         self.create_oval(self.center_x - 3, self.center_y - 3,
@@ -3150,26 +3158,22 @@ title_frame.pack(fill="x", padx=20, pady=15)
 tk.Label(title_frame, text="🌅 My Daily Dashboard", 
          font=("Segoe UI", 20, "bold"), bg="#eaf4fc", fg="#222").pack()
 
-# First row: Clocks and Date in same row, same height
-clocks_date_row = tk.Frame(title_frame, bg="#eaf4fc")
-clocks_date_row.pack(pady=(5, 5))
+# Clocks container - full width with proper spacing
+clocks_container = tk.Frame(title_frame, bg="#eaf4fc")
+clocks_container.pack(fill="x", pady=(10, 15), padx=20)
 
-# Left side clocks: US, UK, Japan
-left_clocks_frame = tk.Frame(clocks_date_row, bg="#eaf4fc")
-left_clocks_frame.pack(side="left", padx=(0, 15))
+# Left side clocks frame
+left_clocks_frame = tk.Frame(clocks_container, bg="#eaf4fc")
+left_clocks_frame.pack(side="left", expand=True)
 
-clock_us = AnalogClock(left_clocks_frame, "US", "America/New_York", size=90)
-clock_us.pack(side="left", padx=5)
+# Create all clocks with bigger size (140 instead of 90)
+clock_us = AnalogClock(left_clocks_frame, "US", "America/New_York", size=140)
+clock_uk = AnalogClock(left_clocks_frame, "UK", "Europe/London", size=140)
+clock_japan = AnalogClock(left_clocks_frame, "Japan", "Asia/Tokyo", size=140)
 
-clock_uk = AnalogClock(left_clocks_frame, "UK", "Europe/London", size=90)
-clock_uk.pack(side="left", padx=5)
-
-clock_japan = AnalogClock(left_clocks_frame, "Japan", "Asia/Tokyo", size=90)
-clock_japan.pack(side="left", padx=5)
-
-# Date and Time in the middle (time below date)
-datetime_middle_frame = tk.Frame(clocks_date_row, bg="#eaf4fc")
-datetime_middle_frame.pack(side="left", padx=20, expand=True)
+# Date and Time in the center (same line as clocks)
+datetime_middle_frame = tk.Frame(clocks_container, bg="#eaf4fc")
+datetime_middle_frame.pack(side="left", padx=30, expand=True)
 
 # Date label
 date_label = tk.Label(datetime_middle_frame, text="", font=("Segoe UI", 14, "bold"), 
@@ -3186,54 +3190,61 @@ timezone_label = tk.Label(datetime_middle_frame, text="Bangladesh Time",
                          font=("Segoe UI", 10), bg="#eaf4fc", fg="#666")
 timezone_label.pack()
 
-# Right side clocks: Bangladesh, India, Singapore
-right_clocks_frame = tk.Frame(clocks_date_row, bg="#eaf4fc")
-right_clocks_frame.pack(side="right", padx=(15, 0))
+# Right side clocks frame
+right_clocks_frame = tk.Frame(clocks_container, bg="#eaf4fc")
+right_clocks_frame.pack(side="right", expand=True)
 
-clock_bd = AnalogClock(right_clocks_frame, "Bangladesh", "Asia/Dhaka", size=90)
-clock_bd.pack(side="left", padx=5)
-
-clock_india = AnalogClock(right_clocks_frame, "India", "Asia/Kolkata", size=90)
-clock_india.pack(side="left", padx=5)
-
-clock_singapore = AnalogClock(right_clocks_frame, "Singapore", "Asia/Singapore", size=90)
-clock_singapore.pack(side="left", padx=5)
+clock_bd = AnalogClock(right_clocks_frame, "Bangladesh", "Asia/Dhaka", size=140)
+clock_india = AnalogClock(right_clocks_frame, "India", "Asia/Kolkata", size=140)
+clock_singapore = AnalogClock(right_clocks_frame, "Singapore", "Asia/Singapore", size=140)
 
 # Function to update individual clock visibility based on settings
 def update_clocks_visibility():
-    # Update left clocks
+    # First, forget all clocks
+    clock_us.pack_forget()
+    clock_uk.pack_forget()
+    clock_japan.pack_forget()
+    clock_bd.pack_forget()
+    clock_india.pack_forget()
+    clock_singapore.pack_forget()
+    
+    # Left side clocks
+    left_visible = []
     if bool(settings.get("show_clock_us", True)):
-        clock_us.pack(side="left", padx=5)
-    else:
-        clock_us.pack_forget()
-    
+        left_visible.append(clock_us)
     if bool(settings.get("show_clock_uk", True)):
-        clock_uk.pack(side="left", padx=5)
-    else:
-        clock_uk.pack_forget()
-    
+        left_visible.append(clock_uk)
     if bool(settings.get("show_clock_japan", True)):
-        clock_japan.pack(side="left", padx=5)
-    else:
-        clock_japan.pack_forget()
+        left_visible.append(clock_japan)
     
-    # Update right clocks
+    # Right side clocks
+    right_visible = []
     if bool(settings.get("show_clock_bangladesh", True)):
-        clock_bd.pack(side="left", padx=5)
-    else:
-        clock_bd.pack_forget()
-    
+        right_visible.append(clock_bd)
     if bool(settings.get("show_clock_india", True)):
-        clock_india.pack(side="left", padx=5)
-    else:
-        clock_india.pack_forget()
-    
+        right_visible.append(clock_india)
     if bool(settings.get("show_clock_singapore", True)):
-        clock_singapore.pack(side="left", padx=5)
-    else:
-        clock_singapore.pack_forget()
+        right_visible.append(clock_singapore)
     
-    # Show/hide the entire clocks row if at least one clock is visible
+    # Pack left clocks with spacing (20px between clocks)
+    for i, clock in enumerate(left_visible):
+        if i == 0:
+            clock.pack(side="left", padx=(0, 20), expand=True)
+        elif i == len(left_visible) - 1:
+            clock.pack(side="left", padx=(20, 0), expand=True)
+        else:
+            clock.pack(side="left", padx=20, expand=True)
+    
+    # Pack right clocks with spacing (20px between clocks)
+    for i, clock in enumerate(right_visible):
+        if i == 0:
+            clock.pack(side="left", padx=(0, 20), expand=True)
+        elif i == len(right_visible) - 1:
+            clock.pack(side="left", padx=(20, 0), expand=True)
+        else:
+            clock.pack(side="left", padx=20, expand=True)
+    
+    # Show/hide the entire clocks container if at least one clock is visible
     any_visible = (bool(settings.get("show_clock_us", True)) or 
                   bool(settings.get("show_clock_uk", True)) or 
                   bool(settings.get("show_clock_japan", True)) or 
@@ -3242,9 +3253,9 @@ def update_clocks_visibility():
                   bool(settings.get("show_clock_singapore", True)))
     
     if any_visible:
-        clocks_date_row.pack(pady=(5, 5))
+        clocks_container.pack(fill="x", pady=(10, 15), padx=20)
     else:
-        clocks_date_row.pack_forget()
+        clocks_container.pack_forget()
 
 # Initialize clock visibility
 update_clocks_visibility()
