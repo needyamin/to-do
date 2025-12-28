@@ -1343,8 +1343,8 @@ def add_todo():
         except Exception:
             pass
 
-def toggle_task(event=None):
-    uuid_val = get_selected_todo_uuid()
+def toggle_task(event=None, selected_uuid=None):
+    uuid_val = selected_uuid or get_selected_todo_uuid()
     if uuid_val and uuid_val in todo_data:
         row = todo_data[uuid_val]
         row["done"] = not bool(row.get("done"))
@@ -1354,8 +1354,8 @@ def toggle_task(event=None):
         persist_todos_to_db(list(todo_tree.get_children()))
         update_status_bar()
 
-def delete_task():
-    uuid_val = get_selected_todo_uuid()
+def delete_task(selected_uuid=None):
+    uuid_val = selected_uuid or get_selected_todo_uuid()
     if uuid_val and uuid_val in todo_data:
         del todo_data[uuid_val]
         try:
@@ -3430,11 +3430,19 @@ todo_tree_scroll.pack(side="right", fill="y")
 todo_tree.pack(side="left", fill="both", expand=True)
 
 # Ensure row highlight disappears when focus moves away from the to-do list
+# Global flag to track if context menu is open
+_context_menu_open = False
+
 def _todo_tree_on_focus_out(event):
     """
     When the Treeview loses focus (user clicks somewhere else),
     clear the visual selection so the highlight background disappears.
+    But don't clear if a context menu is open.
     """
+    global _context_menu_open
+    if _context_menu_open:
+        # Don't clear selection when context menu is open
+        return
     try:
         sel = todo_tree.selection()
         if sel:
@@ -3462,8 +3470,8 @@ todo_tree.bind("<KeyPress-Down>", on_todo_key)
 # Right-click context menu (edit / clear timer / delete)
 todo_menu = tk.Menu(todo_tree, tearoff=0)
 
-def edit_selected_task():
-    uuid_val = get_selected_todo_uuid()
+def edit_selected_task(selected_uuid=None):
+    uuid_val = selected_uuid or get_selected_todo_uuid()
     if not uuid_val or uuid_val not in todo_data:
         messagebox.showwarning("No Task Selected", "Please select a task first to edit.")
         return
@@ -3830,12 +3838,21 @@ def edit_selected_task():
     # Bind window close event
     edit_window.protocol("WM_DELETE_WINDOW", on_edit_window_close)
     
-    # Focus on text area
-    task_text_area.focus_set()
-    task_text_area.select_range("1.0", tk.END)
+    # Ensure window is fully rendered before setting focus
+    edit_window.update_idletasks()
+    
+    # Focus on text area after a short delay to ensure window is ready
+    def set_focus_after_delay():
+        try:
+            if edit_window.winfo_exists():
+                task_text_area.focus_set()
+                task_text_area.select_range("1.0", tk.END)
+        except Exception:
+            pass
+    edit_window.after(50, set_focus_after_delay)
 
-def clear_selected_timer():
-    uuid_val = get_selected_todo_uuid()
+def clear_selected_timer(selected_uuid=None):
+    uuid_val = selected_uuid or get_selected_todo_uuid()
     if not uuid_val or uuid_val not in todo_data:
         return
     row = todo_data[uuid_val]
@@ -3852,13 +3869,68 @@ todo_menu.add_command(label="Edit Task...", command=edit_selected_task)
 todo_menu.add_command(label="Delete Task", command=delete_task)
 
 def show_todo_menu(event):
+    global _context_menu_open
+    selected_uuid = None
     try:
         row_id = todo_tree.identify_row(event.y)
         if row_id:
             todo_tree.selection_set(row_id)
+            selected_uuid = row_id
     except Exception:
         pass
-    todo_menu.tk_popup(event.x_root, event.y_root)
+    
+    # Set flag BEFORE creating menu to prevent focus_out from clearing selection
+    _context_menu_open = True
+    
+    # Create a temporary menu with captured UUID
+    temp_menu = tk.Menu(todo_tree, tearoff=0)
+    if selected_uuid:
+        temp_menu.add_command(label="Toggle Done", command=lambda u=selected_uuid: toggle_task(selected_uuid=u))
+        temp_menu.add_command(label="Set Timer...", command=lambda u=selected_uuid: add_timer_window(u))
+        temp_menu.add_command(label="Clear Timer", command=lambda u=selected_uuid: clear_selected_timer(u))
+        temp_menu.add_separator()
+        temp_menu.add_command(label="Edit Task...", command=lambda u=selected_uuid: edit_selected_task(u))
+        temp_menu.add_command(label="Delete Task", command=lambda u=selected_uuid: delete_task(u))
+    else:
+        # Fallback if no selection
+        temp_menu.add_command(label="Toggle Done", command=toggle_task)
+        temp_menu.add_command(label="Set Timer...", command=add_timer_with_check)
+        temp_menu.add_command(label="Clear Timer", command=clear_selected_timer)
+        temp_menu.add_separator()
+        temp_menu.add_command(label="Edit Task...", command=edit_selected_task)
+        temp_menu.add_command(label="Delete Task", command=delete_task)
+    
+    def on_menu_close():
+        """Called when menu closes"""
+        global _context_menu_open
+        _context_menu_open = False
+    
+    # Track when menu closes
+    try:
+        temp_menu.bind("<Unmap>", lambda e: on_menu_close())
+    except:
+        pass
+    
+    # Show the menu
+    temp_menu.tk_popup(event.x_root, event.y_root)
+    
+    # Restore selection immediately after menu appears (menu takes focus, so selection was cleared)
+    def restore_selection():
+        try:
+            if selected_uuid:
+                todo_tree.selection_set(selected_uuid)
+                todo_tree.see(selected_uuid)
+        except Exception:
+            pass
+    
+    # Restore selection after menu is shown
+    root.after(10, restore_selection)
+    
+    # Reset flag after menu should be closed (fallback)
+    def reset_flag():
+        global _context_menu_open
+        _context_menu_open = False
+    root.after(500, reset_flag)
 
 todo_tree.bind("<Button-3>", show_todo_menu)
 
